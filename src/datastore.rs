@@ -1,20 +1,16 @@
+use std::{u64, usize};
 use std::path::Path;
 use std::sync::Arc;
-use std::{u64, usize};
-
-use super::errors::map_err;
-use super::managers::*;
 
 use chrono::offset::Utc;
+use indradb::{Datastore, DynIter, Edge, EdgeDirection, EdgeProperties, EdgeProperty, Identifier, Json, NamedProperty, Result, Transaction, Vertex, VertexProperties, VertexProperty};
 use indradb::util::next_uuid;
-use indradb::{
-    BulkInsertItem, Datastore, Edge, EdgeDirection, EdgeKey, EdgeProperties, EdgeProperty, EdgePropertyQuery,
-    EdgeQuery, NamedProperty, Result, Transaction, Type, Vertex, VertexProperties, VertexProperty, VertexPropertyQuery,
-    VertexQuery,
-};
 use serde_json::Value as JsonValue;
 use sled::{Config, Db, Tree};
 use uuid::Uuid;
+
+use super::errors::map_err;
+use super::managers::*;
 
 #[derive(Copy, Clone, Default, Debug)]
 pub struct SledConfig {
@@ -101,52 +97,20 @@ impl<'ds> SledDatastore {
 }
 
 impl Datastore for SledDatastore {
-    type Trans = SledTransaction;
+    type Transaction = SledTransaction;
 
-    fn sync(&self) -> Result<()> {
-        let holder = self.holder.clone();
-        let db = holder.db.clone();
-        map_err(db.flush())?;
-        Ok(())
-    }
 
     fn transaction(&self) -> Result<Self::Trans> {
         Ok(SledTransaction::new(self.holder.clone()))
-    }
-
-    fn bulk_insert<I>(&self, items: I) -> Result<()>
-    where
-        I: Iterator<Item = BulkInsertItem>,
-    {
-        let vertex_manager = VertexManager::new(&self.holder);
-        let edge_manager = EdgeManager::new(&self.holder);
-        let vertex_property_manager = VertexPropertyManager::new(&self.holder.vertex_properties);
-        let edge_property_manager = EdgePropertyManager::new(&self.holder.edge_properties);
-
-        for item in items {
-            match item {
-                BulkInsertItem::Vertex(ref vertex) => {
-                    vertex_manager.create(vertex)?;
-                }
-                BulkInsertItem::Edge(ref key) => {
-                    edge_manager.set(key.outbound_id, &key.t, key.inbound_id, Utc::now())?;
-                }
-                BulkInsertItem::VertexProperty(id, ref name, ref value) => {
-                    vertex_property_manager.set(id, name, value)?;
-                }
-                BulkInsertItem::EdgeProperty(ref key, ref name, ref value) => {
-                    edge_property_manager.set(key.outbound_id, &key.t, key.inbound_id, name, value)?;
-                }
-            }
-        }
-
-        map_err(self.holder.db.flush())?;
-        Ok(())
     }
 }
 
 /// A transaction that is backed by Sled.
 pub struct SledTransaction {
+    holder: Arc<SledHolder>,
+}
+
+pub struct SledTransactionFour {
     holder: Arc<SledHolder>,
 }
 
@@ -159,7 +123,7 @@ impl SledTransaction {
     fn vertex_query_to_iterator<'iter, 'trans: 'iter>(
         &'trans self,
         q: VertexQuery,
-    ) -> Result<Box<dyn Iterator<Item = Result<VertexItem>> + 'iter>> {
+    ) -> Result<Box<dyn Iterator<Item=Result<VertexItem>> + 'iter>> {
         match q {
             VertexQuery::Range(q) => {
                 let vertex_manager = VertexManager::new(&self.holder);
@@ -179,7 +143,7 @@ impl SledTransaction {
                     None => Uuid::default(),
                 };
 
-                let mut iter: Box<dyn Iterator<Item = Result<VertexItem>>> =
+                let mut iter: Box<dyn Iterator<Item=Result<VertexItem>>> =
                     Box::new(vertex_manager.iterate_for_range(next_uuid));
 
                 if let Some(ref t) = q.t {
@@ -221,7 +185,7 @@ impl SledTransaction {
                     }
                 });
 
-                let mut iter: Box<dyn Iterator<Item = Result<VertexItem>>> = Box::new(remove_nones_from_iterator(iter));
+                let mut iter: Box<dyn Iterator<Item=Result<VertexItem>>> = Box::new(remove_nones_from_iterator(iter));
 
                 if let Some(ref t) = q.t {
                     iter = Box::new(iter.filter(move |item| match item {
@@ -239,7 +203,7 @@ impl SledTransaction {
     fn edge_query_to_iterator<'iter, 'trans: 'iter>(
         &'trans self,
         q: EdgeQuery,
-    ) -> Result<Box<dyn Iterator<Item = Result<EdgeRangeItem>> + 'iter>> {
+    ) -> Result<Box<dyn Iterator<Item=Result<EdgeRangeItem>> + 'iter>> {
         match q {
             EdgeQuery::Specific(q) => {
                 let edge_manager = EdgeManager::new(&self.holder);
@@ -278,11 +242,11 @@ impl SledTransaction {
                     for item in edge_iterator {
                         match item {
                             Ok((
-                                edge_range_first_id,
-                                edge_range_t,
-                                edge_range_update_datetime,
-                                edge_range_second_id,
-                            )) => {
+                                   edge_range_first_id,
+                                   edge_range_t,
+                                   edge_range_update_datetime,
+                                   edge_range_second_id,
+                               )) => {
                                 if let Some(low) = q.low {
                                     if edge_range_update_datetime < low {
                                         break;
@@ -316,6 +280,133 @@ impl SledTransaction {
                 Ok(Box::new(edges.into_iter()))
             }
         }
+    }
+}
+
+impl<'a> Transaction<'a> for SledTransactionFour {
+    fn vertex_count(&self) -> u64 {
+        let vertex_manager = VertexManager::new(&self.holder);
+        let iterator = vertex_manager.iterate_for_range(Uuid::default());
+        iterator.count() as u64
+    }
+
+    fn all_vertices(&'a self) -> Result<DynIter<'a, Vertex>> {
+        let vertex_manager = VertexManager::new(&self.holder);
+        let iterator = vertex_manager.iterate_for_range(Uuid::default());
+        let mapped = iterator.map(move |item| {
+            let (id, t) = item?;
+            let vertex = Vertex::with_id(id, t);
+            Ok(vertex)
+        });
+
+        Ok(mapped.into())
+    }
+
+    fn range_vertices(&'a self, offset: Uuid) -> Result<DynIter<'a, Vertex>> {
+        let vertex_manager = VertexManager::new(&self.holder);
+        let iter = vertex_manager.iterate_for_range(offset);
+        Ok(iter.into())
+    }
+
+    fn specific_vertices(&'a self, ids: Vec<Uuid>) -> Result<DynIter<'a, Vertex>> {
+        let vertex_manager = VertexManager::new(&self.holder);
+        let iter = ids.into_iter().filter_map(move |id| vertex_manager.get(id)?)
+            .map(|a|);
+        Ok(iter)
+    }
+
+    fn vertex_ids_with_property(&'a self, name: Identifier) -> Result<Option<DynIter<'a, Uuid>>> {
+        let vertex_manager = VertexManager::new(&self.holder);
+        let iter = ids.into_iter().map(move |id| match vertex_manager.get(id)? {
+            Some(value) => Ok(Some((id, value))),
+            None => Ok(None),
+        });
+
+        Ok(Box::new(remove_nones_from_iterator(iter)))
+    }
+
+    fn vertex_ids_with_property_value(&'a self, name: Identifier, value: &Json) -> Result<Option<DynIter<'a, Uuid>>> {
+        todo!()
+    }
+
+    fn edge_count(&self) -> u64 {
+        todo!()
+    }
+
+    fn all_edges(&'a self) -> Result<DynIter<'a, Edge>> {
+        todo!()
+    }
+
+    fn range_edges(&'a self, offset: Edge) -> Result<DynIter<'a, Edge>> {
+        todo!()
+    }
+
+    fn range_reversed_edges(&'a self, offset: Edge) -> Result<DynIter<'a, Edge>> {
+        todo!()
+    }
+
+    fn specific_edges(&'a self, edges: Vec<Edge>) -> Result<DynIter<'a, Edge>> {
+        todo!()
+    }
+
+    fn edges_with_property(&'a self, name: Identifier) -> Result<Option<DynIter<'a, Edge>>> {
+        todo!()
+    }
+
+    fn edges_with_property_value(&'a self, name: Identifier, value: &Json) -> Result<Option<DynIter<'a, Edge>>> {
+        todo!()
+    }
+
+    fn vertex_property(&self, vertex: &Vertex, name: Identifier) -> Result<Option<Json>> {
+        todo!()
+    }
+
+    fn all_vertex_properties_for_vertex(&'a self, vertex: &Vertex) -> Result<DynIter<'a, (Identifier, Json)>> {
+        todo!()
+    }
+
+    fn edge_property(&self, edge: &Edge, name: Identifier) -> Result<Option<Json>> {
+        todo!()
+    }
+
+    fn all_edge_properties_for_edge(&'a self, edge: &Edge) -> Result<DynIter<'a, (Identifier, Json)>> {
+        todo!()
+    }
+
+    fn delete_vertices(&mut self, vertices: Vec<Vertex>) -> Result<()> {
+        todo!()
+    }
+
+    fn delete_edges(&mut self, edges: Vec<Edge>) -> Result<()> {
+        todo!()
+    }
+
+    fn delete_vertex_properties(&mut self, props: Vec<(Uuid, Identifier)>) -> Result<()> {
+        todo!()
+    }
+
+    fn delete_edge_properties(&mut self, props: Vec<(Edge, Identifier)>) -> Result<()> {
+        todo!()
+    }
+
+    fn create_vertex(&mut self, vertex: &Vertex) -> Result<bool> {
+        todo!()
+    }
+
+    fn create_edge(&mut self, edge: &Edge) -> Result<bool> {
+        todo!()
+    }
+
+    fn index_property(&mut self, name: Identifier) -> Result<()> {
+        todo!()
+    }
+
+    fn set_vertex_properties(&mut self, vertices: Vec<Uuid>, name: Identifier, value: &Json) -> Result<()> {
+        todo!()
+    }
+
+    fn set_edge_properties(&mut self, edges: Vec<Edge>, name: Identifier, value: &Json) -> Result<()> {
+        todo!()
     }
 }
 
@@ -355,7 +446,7 @@ impl Transaction for SledTransaction {
         Ok(())
     }
 
-    fn get_vertex_count(&self) -> Result<u64> {
+    fn vertex_count(&self) -> Result<u64> {
         let vertex_manager = VertexManager::new(&self.holder);
         let iterator = vertex_manager.iterate_for_range(Uuid::default());
         Ok(iterator.count() as u64)
@@ -528,9 +619,9 @@ impl Transaction for SledTransaction {
     }
 }
 
-fn remove_nones_from_iterator<I, T>(iter: I) -> impl Iterator<Item = Result<T>>
+fn remove_nones_from_iterator<I, T>(iter: I) -> impl Iterator<Item=Result<T>>
 where
-    I: Iterator<Item = Result<Option<T>>>,
+    I: Iterator<Item=Result<Option<T>>>,
 {
     iter.filter_map(|item| match item {
         Err(err) => Some(Err(err)),
