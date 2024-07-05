@@ -88,7 +88,7 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
 
     pub fn create(&self, vertex: &Vertex) -> Result<bool> {
         let key = self.key(vertex.id);
-        if self.tree.contains_key(&key) {
+        if map_err(self.tree.contains_key(&key))? {
             return Ok(false);
         }
         map_err(self.tree.insert(&key, util::build(&[util::Component::Identifier(vertex.t.clone())])))?;
@@ -151,8 +151,8 @@ fn time_from_bytes(value_bytes: IVec) -> Result<Option<DateTime<Utc>>> {
     let mut cursor = Cursor::new(value_bytes.deref());
     time_from_cursor(&mut cursor)
 }
-fn time_from_cursor<T>(mut cursor: &mut Cursor<T>) -> Result<Option<DateTime<Utc>>> {
-    let time: i64 = util::read_fixed_length_string(&mut cursor).parse()?;
+fn time_from_cursor<T: AsRef<[u8]>>(mut cursor: &mut Cursor<T>) -> Result<Option<DateTime<Utc>>> {
+    let time: i64 = util::read_fixed_length_string(&mut cursor).parse().unwrap();
     let time = DateTime::from_timestamp_micros(time);
     Ok(time)
 }
