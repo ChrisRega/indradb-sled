@@ -41,6 +41,10 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
         }
     }
 
+    pub fn count(&self) -> u64 {
+        self.tree.iter().count() as u64
+    }
+
     fn key(&self, id: Uuid) -> Vec<u8> {
         util::build(&[util::Component::Uuid(id)])
     }
@@ -82,10 +86,13 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
         self.iterate(iter)
     }
 
-    pub fn create(&self, vertex: &Vertex) -> Result<()> {
+    pub fn create(&self, vertex: &Vertex) -> Result<bool> {
         let key = self.key(vertex.id);
+        if self.tree.contains_key(&key) {
+            return Ok(false);
+        }
         map_err(self.tree.insert(&key, util::build(&[util::Component::Identifier(vertex.t.clone())])))?;
-        Ok(())
+        Ok(true)
     }
 
     pub fn delete(&self, id: Uuid) -> Result<()> {
@@ -142,10 +149,14 @@ pub struct EdgeManager<'db: 'tree, 'tree> {
 
 fn time_from_bytes(value_bytes: IVec) -> Result<Option<DateTime<Utc>>> {
     let mut cursor = Cursor::new(value_bytes.deref());
+    time_from_cursor(&mut cursor)
+}
+fn time_from_cursor<T>(mut cursor: &mut Cursor<T>) -> Result<Option<DateTime<Utc>>> {
     let time: i64 = util::read_fixed_length_string(&mut cursor).parse()?;
     let time = DateTime::from_timestamp_micros(time);
     Ok(time)
 }
+
 
 fn time_to_string(time: DateTime<Utc>) -> String {
     time.timestamp_micros().to_string()
@@ -174,6 +185,10 @@ impl<'db, 'tree> EdgeManager<'db, 'tree> {
             }
             None => Ok(None),
         }
+    }
+
+    pub fn count(&self) -> u64 {
+        self.tree.iter().count() as u64
     }
 
     pub fn set(&self, outbound_id: Uuid, t: &Identifier, inbound_id: Uuid, new_update_datetime: DateTime<Utc>) -> Result<()> {
@@ -236,8 +251,8 @@ impl<'tree> EdgeRangeManager<'tree> {
     fn key(&self, first_id: Uuid, t: &Identifier, update_datetime: DateTime<Utc>, second_id: Uuid) -> Vec<u8> {
         util::build(&[
             util::Component::Uuid(first_id),
-            util::Component::Identifier(t),
-            util::Component::DateTime(update_datetime),
+            util::Component::Identifier(t.clone()),
+            util::Component::FixedLengthString(&time_to_string(update_datetime)),
             util::Component::Uuid(second_id),
         ])
     }
@@ -248,8 +263,9 @@ impl<'tree> EdgeRangeManager<'tree> {
             let (k, _) = map_err(item)?;
             let mut cursor = Cursor::new(k);
             let first_id = util::read_uuid(&mut cursor);
-            let t = util::read_type(&mut cursor);
-            let update_datetime = util::read_datetime(&mut cursor);
+            let t = util::read_identifier(&mut cursor);
+
+            let update_datetime = time_from_cursor(&mut cursor)?.unwrap_or_default();
             let second_id = util::read_uuid(&mut cursor);
             Ok((first_id, t, update_datetime, second_id))
         })
@@ -258,17 +274,17 @@ impl<'tree> EdgeRangeManager<'tree> {
     pub fn iterate_for_range<'iter, 'trans: 'iter>(
         &'trans self,
         id: Uuid,
-        t: Option<&Type>,
+        t: Option<&Identifier>,
         high: Option<DateTime<Utc>>,
     ) -> Result<Box<dyn Iterator<Item=Result<EdgeRangeItem>> + 'iter>> {
         match t {
             Some(t) => {
-                let high = high.unwrap_or_else(|| *util::MAX_DATETIME);
-                let prefix = util::build(&[util::Component::Uuid(id), util::Component::Type(t)]);
+                let high: DateTime<Utc> = high.unwrap_or_else(|| DateTime::<Utc>::MAX_UTC);
+                let prefix = util::build(&[util::Component::Uuid(id), util::Component::Identifier(t.clone())]);
                 let low_key = util::build(&[
                     util::Component::Uuid(id),
-                    util::Component::Type(t),
-                    util::Component::DateTime(high),
+                    util::Component::Identifier(t.clone()),
+                    util::Component::FixedLengthString(&time_to_string(high)),
                 ]);
                 let low_key_bytes: &[u8] = low_key.as_ref();
                 let iterator = self.tree.range(low_key_bytes..);
@@ -309,13 +325,13 @@ impl<'tree> EdgeRangeManager<'tree> {
         self.iterate(iterator, prefix)
     }
 
-    pub fn set(&self, first_id: Uuid, t: &Type, update_datetime: DateTime<Utc>, second_id: Uuid) -> Result<()> {
+    pub fn set(&self, first_id: Uuid, t: &Identifier, update_datetime: DateTime<Utc>, second_id: Uuid) -> Result<()> {
         let key = self.key(first_id, t, update_datetime, second_id);
         map_err(self.tree.insert(&key, &[]))?;
         Ok(())
     }
 
-    pub fn delete(&self, first_id: Uuid, t: &Type, update_datetime: DateTime<Utc>, second_id: Uuid) -> Result<()> {
+    pub fn delete(&self, first_id: Uuid, t: &Identifier, update_datetime: DateTime<Utc>, second_id: Uuid) -> Result<()> {
         map_err(self.tree.remove(&self.key(first_id, t, update_datetime, second_id)))?;
         Ok(())
     }
@@ -383,10 +399,10 @@ impl<'tree> EdgePropertyManager<'tree> {
         EdgePropertyManager { tree }
     }
 
-    fn key(&self, outbound_id: Uuid, t: &Type, inbound_id: Uuid, name: &str) -> Vec<u8> {
+    fn key(&self, outbound_id: Uuid, t: &Identifier, inbound_id: Uuid, name: &str) -> Vec<u8> {
         util::build(&[
             util::Component::Uuid(outbound_id),
-            util::Component::Type(t),
+            util::Component::Identifier(t.clone()),
             util::Component::Uuid(inbound_id),
             util::Component::FixedLengthString(name),
         ])
@@ -395,12 +411,12 @@ impl<'tree> EdgePropertyManager<'tree> {
     pub fn iterate_for_owner<'a>(
         &'a self,
         outbound_id: Uuid,
-        t: &'a Type,
+        t: &'a Identifier,
         inbound_id: Uuid,
     ) -> Result<Box<dyn Iterator<Item=Result<EdgePropertyItem>> + 'a>> {
         let prefix = util::build(&[
             util::Component::Uuid(outbound_id),
-            util::Component::Type(t),
+            util::Component::Identifier(t.clone()),
             util::Component::Uuid(inbound_id),
         ]);
 
@@ -413,7 +429,7 @@ impl<'tree> EdgePropertyManager<'tree> {
             let edge_property_outbound_id = util::read_uuid(&mut cursor);
             debug_assert_eq!(edge_property_outbound_id, outbound_id);
 
-            let edge_property_t = util::read_type(&mut cursor);
+            let edge_property_t = util::read_identifier(&mut cursor);
             debug_assert_eq!(&edge_property_t, t);
 
             let edge_property_inbound_id = util::read_uuid(&mut cursor);
@@ -436,7 +452,7 @@ impl<'tree> EdgePropertyManager<'tree> {
         Ok(Box::new(mapped))
     }
 
-    pub fn get(&self, outbound_id: Uuid, t: &Type, inbound_id: Uuid, name: &str) -> Result<Option<JsonValue>> {
+    pub fn get(&self, outbound_id: Uuid, t: &Identifier, inbound_id: Uuid, name: &str) -> Result<Option<JsonValue>> {
         let key = self.key(outbound_id, t, inbound_id, name);
 
         match map_err(self.tree.get(&key))? {
@@ -445,14 +461,14 @@ impl<'tree> EdgePropertyManager<'tree> {
         }
     }
 
-    pub fn set(&self, outbound_id: Uuid, t: &Type, inbound_id: Uuid, name: &str, value: &JsonValue) -> Result<()> {
+    pub fn set(&self, outbound_id: Uuid, t: &Identifier, inbound_id: Uuid, name: &str, value: &JsonValue) -> Result<()> {
         let key = self.key(outbound_id, t, inbound_id, name);
         let value_json = serde_json::to_vec(value)?;
         map_err(self.tree.insert(key.as_slice(), value_json.as_slice()))?;
         Ok(())
     }
 
-    pub fn delete(&self, outbound_id: Uuid, t: &Type, inbound_id: Uuid, name: &str) -> Result<()> {
+    pub fn delete(&self, outbound_id: Uuid, t: &Identifier, inbound_id: Uuid, name: &str) -> Result<()> {
         map_err(self.tree.remove(&self.key(outbound_id, t, inbound_id, name)))?;
         Ok(())
     }
