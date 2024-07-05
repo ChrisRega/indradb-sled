@@ -5,8 +5,14 @@ use indradb::{Datastore, DynIter, Edge, Error, Identifier, Json, Result, Transac
 use sled::{Config, Db, Tree};
 use uuid::Uuid;
 
+use managers::edge_manager::EdgeManager;
+use managers::edge_range_manager::EdgeRangeManager;
+use managers::vertex_property_manager::VertexPropertyManager;
+
+use crate::managers::edge_property_manager::EdgePropertyManager;
+use crate::managers::vertex_manager::VertexManager;
+
 use super::errors::map_err;
-use super::managers::*;
 
 #[derive(Copy, Clone, Default, Debug)]
 pub struct SledConfig {
