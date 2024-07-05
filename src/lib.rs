@@ -3,24 +3,22 @@
 #![cfg_attr(feature = "bench-suite", feature(test))]
 
 extern crate chrono;
-
 #[cfg(any(feature = "bench-suite", feature = "test-suite"))]
 #[macro_use]
 extern crate indradb;
 #[cfg(not(any(feature = "bench-suite", feature = "test-suite")))]
 extern crate indradb;
-
 extern crate serde_json;
 extern crate sled;
 #[cfg(any(feature = "bench-suite", feature = "test-suite"))]
 extern crate tempfile;
 extern crate uuid;
 
+pub use self::datastore::{SledConfig, SledDatastore, SledTransaction};
+
 mod datastore;
 mod errors;
 mod managers;
-
-pub use self::datastore::{SledConfig, SledDatastore, SledTransaction};
 
 mod normal_config {
     #[cfg(feature = "bench-suite")]

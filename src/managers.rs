@@ -2,9 +2,7 @@ use std::io::Cursor;
 use std::ops::Deref;
 use std::u8;
 
-use chrono::DateTime;
-use chrono::offset::Utc;
-use indradb::{Identifier, Result, util, Vertex};
+use indradb::{Edge, Identifier, Result, util, Vertex};
 use serde_json::Value as JsonValue;
 use sled::{Iter as DbIterator, IVec, Tree};
 use sled::Result as SledResult;
@@ -16,7 +14,7 @@ use super::errors::map_err;
 
 pub type OwnedPropertyItem = ((Uuid, String), JsonValue);
 pub type VertexItem = (Uuid, Identifier);
-pub type EdgeRangeItem = (Uuid, Identifier, DateTime<Utc>, Uuid);
+pub type EdgeRangeItem = (Uuid, Identifier, Uuid);
 pub type EdgePropertyItem = ((Uuid, Identifier, Uuid, String), JsonValue);
 
 fn take_while_prefixed(iterator: DbIterator, prefix: Vec<u8>) -> impl Iterator<Item=SledResult<(IVec, IVec)>> {
@@ -109,13 +107,12 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
         {
             let edge_range_manager = EdgeRangeManager::new(self.holder);
             for item in edge_range_manager.iterate_for_owner(id) {
-                let (edge_range_outbound_id, edge_range_t, edge_range_update_datetime, edge_range_inbound_id) = item?;
+                let (edge_range_outbound_id, edge_range_t, edge_range_inbound_id) = item?;
                 debug_assert_eq!(edge_range_outbound_id, id);
                 edge_manager.delete(
                     edge_range_outbound_id,
                     &edge_range_t,
                     edge_range_inbound_id,
-                    edge_range_update_datetime,
                 )?;
             }
         }
@@ -126,7 +123,6 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
                 let (
                     reversed_edge_range_inbound_id,
                     reversed_edge_range_t,
-                    reversed_edge_range_update_datetime,
                     reversed_edge_range_outbound_id,
                 ) = item?;
                 debug_assert_eq!(reversed_edge_range_inbound_id, id);
@@ -134,7 +130,6 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
                     reversed_edge_range_outbound_id,
                     &reversed_edge_range_t,
                     reversed_edge_range_inbound_id,
-                    reversed_edge_range_update_datetime,
                 )?;
             }
         }
@@ -147,20 +142,6 @@ pub struct EdgeManager<'db: 'tree, 'tree> {
     pub tree: &'tree Tree,
 }
 
-fn time_from_bytes(value_bytes: IVec) -> Result<Option<DateTime<Utc>>> {
-    let mut cursor = Cursor::new(value_bytes.deref());
-    time_from_cursor(&mut cursor)
-}
-fn time_from_cursor<T: AsRef<[u8]>>(mut cursor: &mut Cursor<T>) -> Result<Option<DateTime<Utc>>> {
-    let time: i64 = util::read_fixed_length_string(&mut cursor).parse().unwrap();
-    let time = DateTime::from_timestamp_micros(time);
-    Ok(time)
-}
-
-
-fn time_to_string(time: DateTime<Utc>) -> String {
-    time.timestamp_micros().to_string()
-}
 
 impl<'db, 'tree> EdgeManager<'db, 'tree> {
     pub fn new(ds: &'db SledHolder) -> Self {
@@ -178,46 +159,33 @@ impl<'db, 'tree> EdgeManager<'db, 'tree> {
         ])
     }
 
-    pub fn get(&self, outbound_id: Uuid, t: &Identifier, inbound_id: Uuid) -> Result<Option<DateTime<Utc>>> {
-        match map_err(self.tree.get(self.key(outbound_id, t, inbound_id)))? {
-            Some(value_bytes) => {
-                time_from_bytes(value_bytes)
-            }
-            None => Ok(None),
-        }
-    }
-
     pub fn count(&self) -> u64 {
         self.tree.iter().count() as u64
     }
 
-    pub fn set(&self, outbound_id: Uuid, t: &Identifier, inbound_id: Uuid, new_update_datetime: DateTime<Utc>) -> Result<()> {
+    pub fn set(&self, outbound_id: Uuid, t: &Identifier, inbound_id: Uuid) -> Result<()> {
         let edge_range_manager = EdgeRangeManager::new(self.holder);
         let reversed_edge_range_manager = EdgeRangeManager::new_reversed(self.holder);
 
-        if let Some(update_datetime) = self.get(outbound_id, t, inbound_id)? {
-            edge_range_manager.delete(outbound_id, t, update_datetime, inbound_id)?;
-            reversed_edge_range_manager.delete(inbound_id, t, update_datetime, outbound_id)?;
-        }
 
         let key = self.key(outbound_id, t, inbound_id);
         map_err(
             self.tree
-                .insert(key, util::build(&[util::Component::FixedLengthString(&time_to_string(new_update_datetime))])),
+                .insert(key, IVec::default()),
         )?;
-        edge_range_manager.set(outbound_id, t, new_update_datetime, inbound_id)?;
-        reversed_edge_range_manager.set(inbound_id, t, new_update_datetime, outbound_id)?;
+        edge_range_manager.set(outbound_id, t, inbound_id)?;
+        reversed_edge_range_manager.set(inbound_id, t, outbound_id)?;
         Ok(())
     }
 
-    pub fn delete(&self, outbound_id: Uuid, t: &Identifier, inbound_id: Uuid, update_datetime: DateTime<Utc>) -> Result<()> {
+    pub fn delete(&self, outbound_id: Uuid, t: &Identifier, inbound_id: Uuid) -> Result<()> {
         map_err(self.tree.remove(&self.key(outbound_id, t, inbound_id)))?;
 
         let edge_range_manager = EdgeRangeManager::new(self.holder);
-        edge_range_manager.delete(outbound_id, t, update_datetime, inbound_id)?;
+        edge_range_manager.delete(outbound_id, t, inbound_id)?;
 
         let reversed_edge_range_manager = EdgeRangeManager::new_reversed(self.holder);
-        reversed_edge_range_manager.delete(inbound_id, t, update_datetime, outbound_id)?;
+        reversed_edge_range_manager.delete(inbound_id, t, outbound_id)?;
 
         let edge_property_manager = EdgePropertyManager::new(&self.holder.edge_properties);
         for item in edge_property_manager.iterate_for_owner(outbound_id, t, inbound_id)? {
@@ -248,13 +216,17 @@ impl<'tree> EdgeRangeManager<'tree> {
         }
     }
 
-    fn key(&self, first_id: Uuid, t: &Identifier, update_datetime: DateTime<Utc>, second_id: Uuid) -> Vec<u8> {
+    fn key(&self, first_id: Uuid, t: &Identifier, second_id: Uuid) -> Vec<u8> {
         util::build(&[
             util::Component::Uuid(first_id),
             util::Component::Identifier(t.clone()),
-            util::Component::FixedLengthString(&time_to_string(update_datetime)),
             util::Component::Uuid(second_id),
         ])
+    }
+
+    pub(crate) fn contains(&self, edge: &Edge) -> Result<bool> {
+        let key = self.key(edge.outbound_id, &edge.t, edge.inbound_id);
+        map_err(self.tree.contains_key(key))
     }
 
     fn iterate<'it>(&self, iterator: DbIterator, prefix: Vec<u8>) -> impl Iterator<Item=Result<EdgeRangeItem>> + 'it {
@@ -265,9 +237,8 @@ impl<'tree> EdgeRangeManager<'tree> {
             let first_id = util::read_uuid(&mut cursor);
             let t = util::read_identifier(&mut cursor);
 
-            let update_datetime = time_from_cursor(&mut cursor)?.unwrap_or_default();
             let second_id = util::read_uuid(&mut cursor);
-            Ok((first_id, t, update_datetime, second_id))
+            Ok((first_id, t, second_id))
         })
     }
 
@@ -275,16 +246,13 @@ impl<'tree> EdgeRangeManager<'tree> {
         &'trans self,
         id: Uuid,
         t: Option<&Identifier>,
-        high: Option<DateTime<Utc>>,
     ) -> Result<Box<dyn Iterator<Item=Result<EdgeRangeItem>> + 'iter>> {
         match t {
             Some(t) => {
-                let high: DateTime<Utc> = high.unwrap_or_else(|| DateTime::<Utc>::MAX_UTC);
                 let prefix = util::build(&[util::Component::Uuid(id), util::Component::Identifier(t.clone())]);
                 let low_key = util::build(&[
                     util::Component::Uuid(id),
                     util::Component::Identifier(t.clone()),
-                    util::Component::FixedLengthString(&time_to_string(high)),
                 ]);
                 let low_key_bytes: &[u8] = low_key.as_ref();
                 let iterator = self.tree.range(low_key_bytes..);
@@ -295,23 +263,7 @@ impl<'tree> EdgeRangeManager<'tree> {
                 let prefix_bytes: &[u8] = prefix.as_ref();
                 let iterator = self.tree.range(prefix_bytes..);
                 let mapped = self.iterate(iterator, prefix);
-
-                if let Some(high) = high {
-                    // We can filter out `update_datetime`s greater than
-                    // `high` via key prefix filtering, so instead we handle
-                    // it here - after the key has been deserialized.
-                    let filtered = mapped.filter(move |item| {
-                        if let Ok((_, _, update_datetime, _)) = *item {
-                            update_datetime <= high
-                        } else {
-                            true
-                        }
-                    });
-
-                    Ok(Box::new(filtered))
-                } else {
-                    Ok(Box::new(mapped))
-                }
+                Ok(Box::new(mapped))
             }
         }
     }
@@ -325,14 +277,14 @@ impl<'tree> EdgeRangeManager<'tree> {
         self.iterate(iterator, prefix)
     }
 
-    pub fn set(&self, first_id: Uuid, t: &Identifier, update_datetime: DateTime<Utc>, second_id: Uuid) -> Result<()> {
-        let key = self.key(first_id, t, update_datetime, second_id);
+    pub fn set(&self, first_id: Uuid, t: &Identifier, second_id: Uuid) -> Result<()> {
+        let key = self.key(first_id, t, second_id);
         map_err(self.tree.insert(&key, &[]))?;
         Ok(())
     }
 
-    pub fn delete(&self, first_id: Uuid, t: &Identifier, update_datetime: DateTime<Utc>, second_id: Uuid) -> Result<()> {
-        map_err(self.tree.remove(&self.key(first_id, t, update_datetime, second_id)))?;
+    pub fn delete(&self, first_id: Uuid, t: &Identifier, second_id: Uuid) -> Result<()> {
+        map_err(self.tree.remove(&self.key(first_id, t, second_id)))?;
         Ok(())
     }
 }
