@@ -8,6 +8,8 @@ use uuid::Uuid;
 
 use errors::map_err;
 
+// TODO: add a second tree here that prefix-indexes all values like key = [PropName,PropValue,Vertex-UUID]
+
 pub type OwnedPropertyItem = ((Uuid, String), JsonValue);
 
 pub struct VertexPropertyManager<'tree> {

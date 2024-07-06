@@ -49,7 +49,9 @@ pub struct SledHolder {
     pub(crate) reversed_edge_ranges: Tree,
     pub(crate) vertex_properties: Tree,
     pub(crate) edge_properties: Tree,
+    // for prop-name -> value -> ID prefix-indexed lookup
     pub(crate) edge_property_values: Tree,
+    // for prop-name -> value -> UUID prefix-indexed lookup
     pub(crate) vertex_property_values: Tree,
 }
 
