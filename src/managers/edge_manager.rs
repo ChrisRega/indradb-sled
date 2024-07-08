@@ -39,12 +39,8 @@ impl<'db, 'tree> EdgeManager<'db, 'tree> {
         let edge_range_manager = EdgeRangeManager::new(self.holder);
         let reversed_edge_range_manager = EdgeRangeManager::new_reversed(self.holder);
 
-
         let key = self.key(outbound_id, t, inbound_id);
-        map_err(
-            self.tree
-                .insert(key, IVec::default()),
-        )?;
+        map_err(self.tree.insert(key, IVec::default()))?;
         edge_range_manager.set(outbound_id, t, inbound_id)?;
         reversed_edge_range_manager.set(inbound_id, t, outbound_id)?;
         Ok(())
@@ -59,15 +55,12 @@ impl<'db, 'tree> EdgeManager<'db, 'tree> {
         let reversed_edge_range_manager = EdgeRangeManager::new_reversed(self.holder);
         reversed_edge_range_manager.delete(inbound_id, t, outbound_id)?;
 
-        let edge_property_manager = EdgePropertyManager::new(&self.holder.edge_properties);
+        let edge_property_manager =
+            EdgePropertyManager::new(&self.holder.edge_properties, &self.holder.edge_property_values);
+
         for item in edge_property_manager.iterate_for_owner(outbound_id, t, inbound_id)? {
-            let ((edge_property_outbound_id, edge_property_t, edge_property_inbound_id, edge_property_name), _) = item?;
-            edge_property_manager.delete(
-                edge_property_outbound_id,
-                &edge_property_t,
-                edge_property_inbound_id,
-                &edge_property_name[..],
-            )?;
+            let ((edge, id), _) = item?;
+            edge_property_manager.delete(edge.outbound_id, &edge.t, edge.inbound_id, id)?;
         }
         Ok(())
     }

@@ -116,7 +116,7 @@ impl<'tree> VertexPropertyManager<'tree> {
         let items = self.value_index_tree.scan_prefix(prefix);
         for item in items {
             if let Ok((key, _)) = item {
-                let (n, v, vid) = Self::read_key_value_index(key.clone());
+                let (_n, _v, vid) = Self::read_key_value_index(key.clone());
                 if vertex_id == vid {
                     map_err(self.value_index_tree.remove(key))?;
                 }
@@ -140,7 +140,7 @@ mod test {
         let value = json! {"Changesets/25dfc1e7-fdd1-4027-9e98-48a8429a9c70"};
         let key = VertexPropertyManager::key_value_index(&uuid, &value, name);
 
-        let (n, v, id) = VertexPropertyManager::read_key_value_index(key.into());
+        let (n, _v, id) = VertexPropertyManager::read_key_value_index(key.into());
         assert_eq!(n, name);
         assert_eq!(uuid, id);
     }

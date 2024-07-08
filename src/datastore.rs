@@ -116,7 +116,10 @@ impl Datastore for SledDatastore {
             edge_manager: EdgeManager::new(&self.holder),
             edge_range_manager: EdgeRangeManager::new(&self.holder),
             edge_range_manager_rev: EdgeRangeManager::new_reversed(&self.holder),
-            edge_property_manager: EdgePropertyManager::new(&self.holder.edge_properties),
+            edge_property_manager: EdgePropertyManager::new(
+                &self.holder.edge_properties,
+                &self.holder.edge_property_values,
+            ),
             vertex_property_manager: VertexPropertyManager::new(
                 &self.holder.vertex_properties,
                 &self.holder.vertex_property_values,
@@ -245,11 +248,15 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
     }
 
     fn edges_with_property(&'a self, name: Identifier) -> Result<Option<DynIter<'a, Edge>>> {
-        unimplemented!()
+        let iter = self.edge_property_manager.iterate_for_property_name(name)?;
+        Ok(Some(Box::new(iter)))
     }
 
     fn edges_with_property_value(&'a self, name: Identifier, value: &Json) -> Result<Option<DynIter<'a, Edge>>> {
-        unimplemented!()
+        let iter = self
+            .edge_property_manager
+            .iterate_for_property_name_and_value(name, value)?;
+        Ok(Some(Box::new(iter)))
     }
 
     fn vertex_property(&self, vertex: &Vertex, name: Identifier) -> Result<Option<Json>> {
@@ -266,7 +273,7 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
     fn edge_property(&self, edge: &Edge, name: Identifier) -> Result<Option<Json>> {
         let result = self
             .edge_property_manager
-            .get(edge.outbound_id, &edge.t, edge.inbound_id, name.as_str())?;
+            .get(edge.outbound_id, &edge.t, edge.inbound_id, name)?;
         Ok(result.map(|v| Json::new(v)))
     }
 
@@ -275,9 +282,7 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
             .edge_property_manager
             .iterate_for_owner(edge.outbound_id, &edge.t, edge.inbound_id)?
             .collect();
-        let iter = iter
-            .into_iter()
-            .map(|e| e.map(|((_, id, _, _), val)| (id, Json::new(val))));
+        let iter = iter.into_iter().map(|e| e.map(|((_, id), val)| (id, Json::new(val))));
         Ok(Box::new(iter))
     }
 
@@ -308,7 +313,7 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
     fn delete_edge_properties(&mut self, props: Vec<(Edge, Identifier)>) -> Result<()> {
         for (edge, prop) in props {
             self.edge_property_manager
-                .delete(edge.outbound_id, &edge.t, edge.inbound_id, prop.as_str())?;
+                .delete(edge.outbound_id, &edge.t, edge.inbound_id, prop)?;
         }
         Ok(())
     }
@@ -344,19 +349,8 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
     fn set_edge_properties(&mut self, edges: Vec<Edge>, name: Identifier, value: &Json) -> Result<()> {
         for edge in edges {
             self.edge_property_manager
-                .set(edge.outbound_id, &edge.t, edge.inbound_id, name.as_str(), &value)?;
+                .set(edge.outbound_id, &edge.t, edge.inbound_id, name, &value)?;
         }
         Ok(())
     }
-}
-
-fn remove_nones_from_iterator<I, T>(iter: I) -> impl Iterator<Item = Result<T>>
-where
-    I: Iterator<Item = Result<Option<T>>>,
-{
-    iter.filter_map(|item| match item {
-        Err(err) => Some(Err(err)),
-        Ok(Some(value)) => Some(Ok(value)),
-        _ => None,
-    })
 }
