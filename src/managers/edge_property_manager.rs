@@ -1,6 +1,6 @@
 use std::io::Cursor;
-use std::u8;
 
+use ecow::EcoVec;
 use indradb::{Edge, Identifier, Json, util};
 use serde_json::{Value as JsonValue, Value};
 use sled::{IVec, Tree};
@@ -20,10 +20,10 @@ impl<'tree> EdgePropertyManager<'tree> {
         EdgePropertyManager { tree, value_index_tree }
     }
 
-    fn key(&self, outbound_id: Uuid, t: &Identifier, inbound_id: Uuid, name: Identifier) -> Vec<u8> {
+    fn key(&self, outbound_id: Uuid, t: Identifier, inbound_id: Uuid, name: Identifier) -> Vec<u8> {
         util::build(&[
             util::Component::Uuid(outbound_id),
-            util::Component::Identifier(t.clone()),
+            util::Component::Identifier(t),
             util::Component::Uuid(inbound_id),
             util::Component::Identifier(name),
         ])
@@ -33,8 +33,8 @@ impl<'tree> EdgePropertyManager<'tree> {
         &self,
         name: Identifier,
     ) -> indradb::Result<impl Iterator<Item = indradb::Result<Edge>> + '_> {
-        let prefix = util::build(&[util::Component::Identifier(name.clone())]);
-        let iterator = self.value_index_tree.scan_prefix(&prefix);
+        let prefix = util::build(&[util::Component::Identifier(name)]);
+        let iterator = self.value_index_tree.scan_prefix(prefix);
 
         Ok(iterator.map(move |item| -> indradb::Result<Edge> {
             let (k, _v) = map_err(item)?;
@@ -49,8 +49,8 @@ impl<'tree> EdgePropertyManager<'tree> {
         value: &JsonValue,
     ) -> indradb::Result<impl Iterator<Item = indradb::Result<Edge>> + 'tree> {
         let value = value.clone();
-        let prefix = util::build(&[util::Component::Identifier(name.clone())]);
-        let iterator = self.value_index_tree.scan_prefix(&prefix);
+        let prefix = util::build(&[util::Component::Identifier(name)]);
+        let iterator = self.value_index_tree.scan_prefix(prefix);
 
         Ok(iterator
             .map(move |item| -> indradb::Result<(Edge, Value)> {
@@ -76,30 +76,25 @@ impl<'tree> EdgePropertyManager<'tree> {
 
     pub fn iterate_for_owner<'a>(
         &'a self,
-        outbound_id: Uuid,
-        t: &'a Identifier,
-        inbound_id: Uuid,
+        edge: &Edge,
     ) -> indradb::Result<Box<dyn Iterator<Item = indradb::Result<EdgePropertyItem>> + 'a>> {
         let prefix = util::build(&[
-            util::Component::Uuid(outbound_id),
-            util::Component::Identifier(t.clone()),
-            util::Component::Uuid(inbound_id),
+            util::Component::Uuid(edge.outbound_id),
+            util::Component::Identifier(edge.t),
+            util::Component::Uuid(edge.inbound_id),
         ]);
 
-        let iterator = self.tree.scan_prefix(&prefix);
+        let iterator = self.tree.scan_prefix(prefix);
 
         let mapped = iterator.map(move |item| -> indradb::Result<EdgePropertyItem> {
             let (k, v) = map_err(item)?;
             let mut cursor = Cursor::new(k);
 
             let edge_property_outbound_id = util::read_uuid(&mut cursor);
-            debug_assert_eq!(edge_property_outbound_id, outbound_id);
 
             let edge_property_t = util::read_identifier(&mut cursor);
-            debug_assert_eq!(&edge_property_t, t);
 
             let edge_property_inbound_id = util::read_uuid(&mut cursor);
-            debug_assert_eq!(edge_property_inbound_id, inbound_id);
 
             let edge_property_name = util::read_identifier(&mut cursor);
 
@@ -108,7 +103,7 @@ impl<'tree> EdgePropertyManager<'tree> {
                 (
                     Edge {
                         outbound_id: edge_property_outbound_id,
-                        t: edge_property_t.clone(),
+                        t: edge_property_t,
                         inbound_id: edge_property_inbound_id,
                     },
                     edge_property_name,
@@ -123,13 +118,13 @@ impl<'tree> EdgePropertyManager<'tree> {
     pub fn get(
         &self,
         outbound_id: Uuid,
-        t: &Identifier,
+        t: Identifier,
         inbound_id: Uuid,
         name: Identifier,
     ) -> indradb::Result<Option<JsonValue>> {
         let key = self.key(outbound_id, t, inbound_id, name);
 
-        match map_err(self.tree.get(&key))? {
+        match map_err(self.tree.get(key))? {
             Some(ref value_bytes) => Ok(Some(serde_json::from_slice(value_bytes)?)),
             None => Ok(None),
         }
@@ -140,7 +135,7 @@ impl<'tree> EdgePropertyManager<'tree> {
             util::Component::Identifier(property_name),
             util::Component::Json(&Json::new(value.clone())),
             util::Component::Uuid(edge.outbound_id),
-            util::Component::Identifier(edge.t.clone()),
+            util::Component::Identifier(edge.t),
             util::Component::Uuid(edge.inbound_id),
         ])
     }
@@ -166,7 +161,7 @@ impl<'tree> EdgePropertyManager<'tree> {
     pub fn set(
         &self,
         outbound_id: Uuid,
-        t: &Identifier,
+        t: Identifier,
         inbound_id: Uuid,
         name: Identifier,
         value: &JsonValue,
@@ -177,7 +172,7 @@ impl<'tree> EdgePropertyManager<'tree> {
         let value_key = Self::key_value_index(
             Edge {
                 outbound_id,
-                t: t.clone(),
+                t,
                 inbound_id,
             },
             value,
@@ -190,20 +185,24 @@ impl<'tree> EdgePropertyManager<'tree> {
         Ok(())
     }
 
-    pub fn delete(&self, outbound_id: Uuid, t: &Identifier, inbound_id: Uuid, name: Identifier) -> indradb::Result<()> {
+    pub fn delete(&self, outbound_id: Uuid, t: Identifier, inbound_id: Uuid, name: Identifier) -> indradb::Result<()> {
         let owner = Edge {
             outbound_id,
-            t: t.clone(),
+            t,
             inbound_id,
         };
-        map_err(self.tree.remove(&self.key(outbound_id, t, inbound_id, name)))?;
-        let prefix = util::build(&[util::Component::Identifier(t.clone())]);
+        map_err(self.tree.remove(self.key(outbound_id, t, inbound_id, name)))?;
+        let prefix = util::build(&[util::Component::Identifier(t)]);
+        let mut edges_to_delete = EcoVec::new();
         for edge in self.value_index_tree.scan_prefix(prefix) {
             let (k, _) = map_err(edge)?;
             let (_n, _, vid) = Self::read_key_value_index(k.clone());
             if vid == owner {
-                map_err(self.value_index_tree.remove(&k))?;
+                edges_to_delete.push(k);
             }
+        }
+        for edge in edges_to_delete {
+            map_err(self.value_index_tree.remove(&edge))?;
         }
         Ok(())
     }

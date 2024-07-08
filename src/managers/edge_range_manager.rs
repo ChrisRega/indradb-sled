@@ -1,15 +1,11 @@
 use std::io::Cursor;
-use std::u8;
 
-use indradb::{Edge, Identifier, util};
+use indradb::{Edge, util};
 use sled::{Iter as DbIterator, Tree};
 use uuid::Uuid;
 
 use datastore::SledHolder;
 use errors::map_err;
-use managers;
-
-pub type EdgeRangeItem = (Uuid, Identifier, Uuid);
 
 pub struct EdgeRangeManager<'tree> {
     pub tree: &'tree Tree,
@@ -26,69 +22,65 @@ impl<'tree> EdgeRangeManager<'tree> {
         }
     }
 
-    fn key(&self, first_id: Uuid, t: &Identifier, second_id: Uuid) -> Vec<u8> {
+    fn key(&self, edge: &Edge) -> Vec<u8> {
         util::build(&[
-            util::Component::Uuid(first_id),
-            util::Component::Identifier(t.clone()),
-            util::Component::Uuid(second_id),
+            util::Component::Uuid(edge.outbound_id),
+            util::Component::Identifier(edge.t),
+            util::Component::Uuid(edge.inbound_id),
         ])
     }
 
     pub(crate) fn contains(&self, edge: &Edge) -> indradb::Result<bool> {
-        let key = self.key(edge.outbound_id, &edge.t, edge.inbound_id);
+        let key = self.key(edge);
         map_err(self.tree.contains_key(key))
     }
 
-    fn iterate<'it>(
-        &self,
-        iterator: DbIterator,
-        prefix: Vec<u8>,
-    ) -> impl Iterator<Item = indradb::Result<EdgeRangeItem>> + 'it {
-        let filtered = managers::take_while_prefixed(iterator, prefix);
-        filtered.map(move |item| -> indradb::Result<EdgeRangeItem> {
+    fn sled_to_edge(iter: DbIterator) -> impl Iterator<Item = indradb::Result<Edge>> {
+        iter.map(move |item| {
             let (k, _) = map_err(item)?;
             let mut cursor = Cursor::new(k);
-            let first_id = util::read_uuid(&mut cursor);
+            let outbound_id = util::read_uuid(&mut cursor);
             let t = util::read_identifier(&mut cursor);
-
-            let second_id = util::read_uuid(&mut cursor);
-            Ok((first_id, t, second_id))
+            let inbound_id = util::read_uuid(&mut cursor);
+            Ok(Edge {
+                outbound_id,
+                t,
+                inbound_id,
+            })
         })
     }
 
     pub fn iterate_for_range<'iter, 'trans: 'iter>(
         &'trans self,
-        outbound_id: Uuid,
-        t: Identifier,
-        inbound_id: Uuid,
-    ) -> impl Iterator<Item = indradb::Result<EdgeRangeItem>> {
-        let offset = self.key(outbound_id, &t, inbound_id);
+        edge: &Edge,
+    ) -> impl Iterator<Item = indradb::Result<Edge>> {
+        let offset = self.key(edge);
         let iterator = self.tree.range(offset..);
-        self.iterate(iterator, vec![]).map(|item| item)
+        Self::sled_to_edge(iterator)
     }
 
-    pub fn iterate_for_all(&self) -> impl Iterator<Item = indradb::Result<EdgeRangeItem>> {
+    pub fn iterate_for_all(&self) -> impl Iterator<Item = indradb::Result<Edge>> {
         let iterator = self.tree.iter();
-        self.iterate(iterator, vec![]).map(|item| item)
+        Self::sled_to_edge(iterator)
     }
 
     pub fn iterate_for_owner<'iter, 'trans: 'iter>(
         &'trans self,
         id: Uuid,
-    ) -> impl Iterator<Item = indradb::Result<EdgeRangeItem>> + 'iter {
+    ) -> impl Iterator<Item = indradb::Result<Edge>> + 'iter {
         let prefix: Vec<u8> = util::build(&[util::Component::Uuid(id)]);
-        let iterator = self.tree.scan_prefix(&prefix);
-        self.iterate(iterator, prefix)
+        let iterator = self.tree.scan_prefix(prefix);
+        Self::sled_to_edge(iterator)
     }
 
-    pub fn set(&self, first_id: Uuid, t: &Identifier, second_id: Uuid) -> indradb::Result<()> {
-        let key = self.key(first_id, t, second_id);
-        map_err(self.tree.insert(&key, &[]))?;
+    pub fn set(&self, edge: &Edge) -> indradb::Result<()> {
+        let key = self.key(edge);
+        map_err(self.tree.insert(key, &[]))?;
         Ok(())
     }
 
-    pub fn delete(&self, first_id: Uuid, t: &Identifier, second_id: Uuid) -> indradb::Result<()> {
-        map_err(self.tree.remove(&self.key(first_id, t, second_id)))?;
+    pub fn delete(&self, edge: &Edge) -> indradb::Result<()> {
+        map_err(self.tree.remove(self.key(edge)))?;
         Ok(())
     }
 }

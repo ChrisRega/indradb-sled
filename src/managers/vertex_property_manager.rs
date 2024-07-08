@@ -1,6 +1,6 @@
 use std::io::Cursor;
-use std::u8;
 
+use ecow::EcoVec;
 use indradb::{Identifier, Json, util};
 use serde_json::Value as JsonValue;
 use sled::{IVec, Tree};
@@ -45,7 +45,7 @@ impl<'tree> VertexPropertyManager<'tree> {
         name: Identifier,
     ) -> indradb::Result<impl Iterator<Item = indradb::Result<OwnedPropertyItem>> + '_> {
         let prefix = util::build(&[util::Component::Identifier(name)]);
-        let iterator = self.value_index_tree.scan_prefix(&prefix);
+        let iterator = self.value_index_tree.scan_prefix(prefix);
 
         Ok(iterator.map(move |item| -> indradb::Result<OwnedPropertyItem> {
             let (k, v) = map_err(item)?;
@@ -64,7 +64,7 @@ impl<'tree> VertexPropertyManager<'tree> {
             util::Component::Identifier(name),
             util::Component::Json(&Json::new(value.clone())),
         ]);
-        let iterator = self.value_index_tree.scan_prefix(&prefix);
+        let iterator = self.value_index_tree.scan_prefix(prefix);
 
         Ok(iterator.map(move |item| -> indradb::Result<OwnedPropertyItem> {
             let (k, v) = map_err(item)?;
@@ -79,7 +79,7 @@ impl<'tree> VertexPropertyManager<'tree> {
         vertex_id: Uuid,
     ) -> indradb::Result<impl Iterator<Item = indradb::Result<OwnedPropertyItem>> + '_> {
         let prefix = util::build(&[util::Component::Uuid(vertex_id)]);
-        let iterator = self.tree.scan_prefix(&prefix);
+        let iterator = self.tree.scan_prefix(prefix);
 
         Ok(iterator.map(move |item| -> indradb::Result<OwnedPropertyItem> {
             let (k, v) = map_err(item)?;
@@ -95,7 +95,7 @@ impl<'tree> VertexPropertyManager<'tree> {
     pub fn get(&self, vertex_id: Uuid, name: Identifier) -> indradb::Result<Option<JsonValue>> {
         let key = self.key(vertex_id, name);
 
-        match map_err(self.tree.get(&key))? {
+        match map_err(self.tree.get(key))? {
             Some(value_bytes) => Ok(Some(serde_json::from_slice(&value_bytes)?)),
             None => Ok(None),
         }
@@ -111,16 +111,18 @@ impl<'tree> VertexPropertyManager<'tree> {
     }
 
     pub fn delete(&self, vertex_id: Uuid, name: Identifier) -> indradb::Result<()> {
-        map_err(self.tree.remove(&self.key(vertex_id, name)))?;
+        map_err(self.tree.remove(self.key(vertex_id, name)))?;
         let prefix = util::build(&[util::Component::Identifier(name)]);
         let items = self.value_index_tree.scan_prefix(prefix);
-        for item in items {
-            if let Ok((key, _)) = item {
-                let (_n, _v, vid) = Self::read_key_value_index(key.clone());
-                if vertex_id == vid {
-                    map_err(self.value_index_tree.remove(key))?;
-                }
+        let mut keys_to_remove = EcoVec::new();
+        for (key, _) in items.flatten() {
+            let (_n, _v, vid) = Self::read_key_value_index(key.clone());
+            if vertex_id == vid {
+                keys_to_remove.push(key);
             }
+        }
+        for key in keys_to_remove {
+            map_err(self.value_index_tree.remove(key))?;
         }
         Ok(())
     }
