@@ -22,12 +22,14 @@ mod errors;
 mod managers;
 
 mod normal_config {
+    use indradb::Database;
+
     #[cfg(feature = "bench-suite")]
     full_bench_impl!({
         use super::SledDatastore;
         use tempfile::tempdir;
         let path = tempdir().unwrap().into_path();
-        SledDatastore::new(path).unwrap()
+        Database::new(SledDatastore::new(path).unwrap())
     });
 
     #[cfg(feature = "test-suite")]
@@ -35,17 +37,19 @@ mod normal_config {
         use super::SledDatastore;
         use tempfile::tempdir;
         let path = tempdir().unwrap().into_path();
-        SledDatastore::new(path).unwrap()
+        Database::new(SledDatastore::new(path).unwrap())
     });
 }
 
 mod compression_config {
+    use indradb::Database;
+
     #[cfg(feature = "bench-suite")]
     full_bench_impl!({
         use super::SledConfig;
         use tempfile::tempdir;
         let path = tempdir().unwrap().into_path();
-        SledConfig::with_compression(None).open(path).unwrap()
+        Database::new(SledConfig::with_compression(None).open(path).unwrap())
     });
 
     #[cfg(feature = "test-suite")]
@@ -53,6 +57,6 @@ mod compression_config {
         use super::SledConfig;
         use tempfile::tempdir;
         let path = tempdir().unwrap().into_path();
-        SledConfig::with_compression(None).open(path).unwrap()
+        Database::new(SledConfig::with_compression(None).open(path).unwrap())
     });
 }
