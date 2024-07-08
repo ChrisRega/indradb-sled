@@ -3,6 +3,7 @@
 #![cfg_attr(feature = "bench-suite", feature(test))]
 
 extern crate chrono;
+extern crate ecow;
 #[cfg(any(feature = "bench-suite", feature = "test-suite"))]
 #[macro_use]
 extern crate indradb;
