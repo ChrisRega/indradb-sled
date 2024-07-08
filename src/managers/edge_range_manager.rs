@@ -39,7 +39,11 @@ impl<'tree> EdgeRangeManager<'tree> {
         map_err(self.tree.contains_key(key))
     }
 
-    fn iterate<'it>(&self, iterator: DbIterator, prefix: Vec<u8>) -> impl Iterator<Item=indradb::Result<EdgeRangeItem>> + 'it {
+    fn iterate<'it>(
+        &self,
+        iterator: DbIterator,
+        prefix: Vec<u8>,
+    ) -> impl Iterator<Item = indradb::Result<EdgeRangeItem>> + 'it {
         let filtered = managers::take_while_prefixed(iterator, prefix);
         filtered.map(move |item| -> indradb::Result<EdgeRangeItem> {
             let (k, _) = map_err(item)?;
@@ -54,34 +58,24 @@ impl<'tree> EdgeRangeManager<'tree> {
 
     pub fn iterate_for_range<'iter, 'trans: 'iter>(
         &'trans self,
-        id: Uuid,
-        t: Option<&Identifier>,
-    ) -> indradb::Result<Box<dyn Iterator<Item=indradb::Result<EdgeRangeItem>> + 'iter>> {
-        match t {
-            Some(t) => {
-                let prefix = util::build(&[util::Component::Uuid(id), util::Component::Identifier(t.clone())]);
-                let low_key = util::build(&[
-                    util::Component::Uuid(id),
-                    util::Component::Identifier(t.clone()),
-                ]);
-                let low_key_bytes: &[u8] = low_key.as_ref();
-                let iterator = self.tree.range(low_key_bytes..);
-                Ok(Box::new(self.iterate(iterator, prefix)))
-            }
-            None => {
-                let prefix = util::build(&[util::Component::Uuid(id)]);
-                let prefix_bytes: &[u8] = prefix.as_ref();
-                let iterator = self.tree.range(prefix_bytes..);
-                let mapped = self.iterate(iterator, prefix);
-                Ok(Box::new(mapped))
-            }
-        }
+        outbound_id: Uuid,
+        t: Identifier,
+        inbound_id: Uuid,
+    ) -> impl Iterator<Item = indradb::Result<EdgeRangeItem>> {
+        let offset = self.key(outbound_id, &t, inbound_id);
+        let iterator = self.tree.range(offset..);
+        self.iterate(iterator, vec![]).map(|item| item)
+    }
+
+    pub fn iterate_for_all(&self) -> impl Iterator<Item = indradb::Result<EdgeRangeItem>> {
+        let iterator = self.tree.iter();
+        self.iterate(iterator, vec![]).map(|item| item)
     }
 
     pub fn iterate_for_owner<'iter, 'trans: 'iter>(
         &'trans self,
         id: Uuid,
-    ) -> impl Iterator<Item=indradb::Result<EdgeRangeItem>> + 'iter {
+    ) -> impl Iterator<Item = indradb::Result<EdgeRangeItem>> + 'iter {
         let prefix: Vec<u8> = util::build(&[util::Component::Uuid(id)]);
         let iterator = self.tree.scan_prefix(&prefix);
         self.iterate(iterator, prefix)

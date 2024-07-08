@@ -189,25 +189,21 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
     }
 
     fn all_edges(&'a self) -> Result<DynIter<'a, Edge>> {
-        let iter = self
-            .edge_range_manager
-            .iterate_for_range(Uuid::default(), None)
-            .map(|i| {
-                i.map(|e| {
-                    e.map(|(outbound_id, t, inbound_id)| Edge {
-                        outbound_id,
-                        t,
-                        inbound_id,
-                    })
-                })
-            })?;
+        let iter = self.edge_range_manager.iterate_for_all();
+        let iter = iter.map(|e| {
+            e.map(|(outbound_id, t, inbound_id)| Edge {
+                outbound_id,
+                t,
+                inbound_id,
+            })
+        });
         Ok(Box::new(iter))
     }
 
     fn range_edges(&'a self, offset: Edge) -> Result<DynIter<'a, Edge>> {
         let iter = self
             .edge_range_manager
-            .iterate_for_range(offset.inbound_id, Some(&offset.t))?;
+            .iterate_for_range(offset.outbound_id, offset.t, offset.inbound_id);
         let iter = iter.map(|r| {
             r.map(|(outbound_id, t, inbound_id)| Edge {
                 outbound_id,
@@ -221,7 +217,7 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
     fn range_reversed_edges(&'a self, offset: Edge) -> Result<DynIter<'a, Edge>> {
         let iter = self
             .edge_range_manager_rev
-            .iterate_for_range(offset.inbound_id, Some(&offset.t))?;
+            .iterate_for_range(offset.outbound_id, offset.t, offset.inbound_id);
         let iter = iter.map(|r| {
             r.map(|(outbound_id, t, inbound_id)| Edge {
                 outbound_id,
@@ -328,8 +324,7 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
         if !outbound_exists || !inbound_exists {
             Ok(false)
         } else {
-            let edge_manager = EdgeManager::new(&self.holder);
-            edge_manager.set(edge.outbound_id, &edge.t, edge.inbound_id)?;
+            self.edge_manager.set(edge.outbound_id, &edge.t, edge.inbound_id)?;
             Ok(true)
         }
     }
