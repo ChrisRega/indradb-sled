@@ -50,7 +50,7 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
         }
     }
 
-    fn iterate(&self, iterator: DbIterator) -> impl Iterator<Item=indradb::Result<VertexItem>> + '_ {
+    fn iterate(&self, iterator: DbIterator) -> impl Iterator<Item = indradb::Result<VertexItem>> + '_ {
         iterator.map(move |item| -> indradb::Result<VertexItem> {
             let (k, v) = map_err(item)?;
 
@@ -66,7 +66,7 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
         })
     }
 
-    pub fn iterate_for_range(&self, id: Uuid) -> impl Iterator<Item=indradb::Result<VertexItem>> + '_ {
+    pub fn iterate_for_range(&self, id: Uuid) -> impl Iterator<Item = indradb::Result<VertexItem>> + '_ {
         let low_key = util::build(&[util::Component::Uuid(id)]);
         let low_key_bytes: &[u8] = low_key.as_ref();
         let iter = self.tree.range(low_key_bytes..);
@@ -78,17 +78,21 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
         if map_err(self.tree.contains_key(&key))? {
             return Ok(false);
         }
-        map_err(self.tree.insert(&key, util::build(&[util::Component::Identifier(vertex.t.clone())])))?;
+        map_err(
+            self.tree
+                .insert(&key, util::build(&[util::Component::Identifier(vertex.t.clone())])),
+        )?;
         Ok(true)
     }
 
     pub fn delete(&self, id: Uuid) -> indradb::Result<()> {
         map_err(self.tree.remove(&self.key(id)))?;
 
-        let vertex_property_manager = VertexPropertyManager::new(&self.holder.vertex_properties);
+        let vertex_property_manager =
+            VertexPropertyManager::new(&self.holder.vertex_properties, &self.holder.vertex_property_values);
         for item in vertex_property_manager.iterate_for_owner(id)? {
             let ((vertex_property_owner_id, vertex_property_name), _) = item?;
-            vertex_property_manager.delete(vertex_property_owner_id, &vertex_property_name[..])?;
+            vertex_property_manager.delete(vertex_property_owner_id, vertex_property_name)?;
         }
 
         let edge_manager = EdgeManager::new(self.holder);
@@ -98,22 +102,14 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
             for item in edge_range_manager.iterate_for_owner(id) {
                 let (edge_range_outbound_id, edge_range_t, edge_range_inbound_id) = item?;
                 debug_assert_eq!(edge_range_outbound_id, id);
-                edge_manager.delete(
-                    edge_range_outbound_id,
-                    &edge_range_t,
-                    edge_range_inbound_id,
-                )?;
+                edge_manager.delete(edge_range_outbound_id, &edge_range_t, edge_range_inbound_id)?;
             }
         }
 
         {
             let reversed_edge_range_manager = EdgeRangeManager::new_reversed(self.holder);
             for item in reversed_edge_range_manager.iterate_for_owner(id) {
-                let (
-                    reversed_edge_range_inbound_id,
-                    reversed_edge_range_t,
-                    reversed_edge_range_outbound_id,
-                ) = item?;
+                let (reversed_edge_range_inbound_id, reversed_edge_range_t, reversed_edge_range_outbound_id) = item?;
                 debug_assert_eq!(reversed_edge_range_inbound_id, id);
                 edge_manager.delete(
                     reversed_edge_range_outbound_id,
