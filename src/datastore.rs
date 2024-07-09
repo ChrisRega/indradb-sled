@@ -5,6 +5,7 @@ use sled::{Config, Db, Tree};
 
 use managers::edge_manager::EdgeManager;
 use managers::edge_range_manager::EdgeRangeManager;
+use managers::metadata::MetaDataManager;
 use managers::vertex_property_manager::VertexPropertyManager;
 use transaction::SledTransaction;
 
@@ -52,6 +53,7 @@ pub struct SledHolder {
     pub(crate) edge_property_values: Tree,
     // for prop-name -> value -> UUID prefix-indexed lookup
     pub(crate) vertex_property_values: Tree,
+    pub(crate) metadata: Tree,
 }
 
 impl SledHolder {
@@ -81,6 +83,7 @@ impl SledHolder {
             edge_properties: map_err(db.open_tree("edge_properties"))?,
             vertex_property_values: map_err(db.open_tree("vertex_property_values"))?,
             edge_property_values: map_err(db.open_tree("edge_property_values"))?,
+            metadata: map_err(db.open_tree("metadata"))?,
             db,
         })
     }
@@ -123,6 +126,7 @@ impl Datastore for SledDatastore {
                 &self.holder.vertex_properties,
                 &self.holder.vertex_property_values,
             ),
+            meta_data_manager: MetaDataManager::new(&self.holder.metadata).unwrap(),
         }
     }
 }

@@ -40,7 +40,7 @@ impl<'db, 'tree> EdgeManager<'db, 'tree> {
         let key = self.key(edge.clone());
         map_err(self.tree.insert(key, IVec::default()))?;
         edge_range_manager.set(edge)?;
-        reversed_edge_range_manager.set(&reverse_edge(&edge))?;
+        reversed_edge_range_manager.set(&reverse_edge(edge))?;
         Ok(())
     }
 
@@ -51,7 +51,7 @@ impl<'db, 'tree> EdgeManager<'db, 'tree> {
         edge_range_manager.delete(edge)?;
 
         let reversed_edge_range_manager = EdgeRangeManager::new_reversed(self.holder);
-        reversed_edge_range_manager.delete(&reverse_edge(&edge))?;
+        reversed_edge_range_manager.delete(&reverse_edge(edge))?;
 
         let edge_property_manager =
             EdgePropertyManager::new(&self.holder.edge_properties, &self.holder.edge_property_values);

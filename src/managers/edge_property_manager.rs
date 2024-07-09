@@ -148,6 +148,14 @@ impl<'tree> EdgePropertyManager<'tree> {
     pub fn set(&self, edge: &Edge, name: Identifier, value: &JsonValue) -> indradb::Result<()> {
         let key = self.key(edge, name);
         let value_json = serde_json::to_vec(value)?;
+
+        let old_value = map_err(self.tree.get(key.clone()))?;
+        if let Some(old_value) = old_value {
+            let old_value: Json = serde_json::from_slice(&old_value)?;
+            let value_key = Self::key_value_index(edge, &old_value, name);
+            map_err(self.value_index_tree.remove(value_key.as_slice()))?;
+        }
+
         map_err(self.tree.insert(key.as_slice(), value_json.as_slice()))?;
         let value_key = Self::key_value_index(edge, value, name);
 

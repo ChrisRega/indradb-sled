@@ -6,6 +6,7 @@ use errors::map_err;
 use managers::edge_manager::EdgeManager;
 use managers::edge_property_manager::EdgePropertyManager;
 use managers::edge_range_manager::EdgeRangeManager;
+use managers::metadata::MetaDataManager;
 use managers::vertex_manager::VertexManager;
 use managers::vertex_property_manager::VertexPropertyManager;
 
@@ -18,6 +19,7 @@ pub struct SledTransaction<'a> {
     pub(crate) vertex_property_manager: VertexPropertyManager<'a>,
     pub(crate) edge_range_manager: EdgeRangeManager<'a>,
     pub(crate) edge_range_manager_rev: EdgeRangeManager<'a>,
+    pub(crate) meta_data_manager: MetaDataManager<'a>,
 }
 
 impl<'a> Transaction<'a> for SledTransaction<'a> {
@@ -53,6 +55,9 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
     }
 
     fn vertex_ids_with_property(&'a self, name: Identifier) -> indradb::Result<Option<DynIter<'a, Uuid>>> {
+        if !self.meta_data_manager.is_indexed(&name)? {
+            return Ok(None);
+        }
         let iter = self.vertex_property_manager.iterate_for_property_name(name)?;
         let iter = iter.map(|r| r.map(|(id, _)| id.0));
         Ok(Some(Box::new(iter)))
@@ -63,6 +68,9 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
         name: Identifier,
         value: &Json,
     ) -> indradb::Result<Option<DynIter<'a, Uuid>>> {
+        if !self.meta_data_manager.is_indexed(&name)? {
+            return Ok(None);
+        }
         let iter = self
             .vertex_property_manager
             .iterate_for_property_name_and_value(name, value)?;
@@ -110,6 +118,9 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
     }
 
     fn edges_with_property(&'a self, name: Identifier) -> indradb::Result<Option<DynIter<'a, Edge>>> {
+        if !self.meta_data_manager.is_indexed(&name)? {
+            return Ok(None);
+        }
         let iter = self.edge_property_manager.iterate_for_property_name(name)?;
         Ok(Some(Box::new(iter)))
     }
@@ -119,6 +130,9 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
         name: Identifier,
         value: &Json,
     ) -> indradb::Result<Option<DynIter<'a, Edge>>> {
+        if !self.meta_data_manager.is_indexed(&name)? {
+            return Ok(None);
+        }
         let iter = self
             .edge_property_manager
             .iterate_for_property_name_and_value(name, value)?;
@@ -179,6 +193,7 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
     }
 
     fn sync(&self) -> indradb::Result<()> {
+        self.meta_data_manager.sync()?;
         let _ = map_err(self.holder.db.flush())?;
         Ok(())
     }
@@ -199,8 +214,8 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
         }
     }
 
-    fn index_property(&mut self, _name: Identifier) -> indradb::Result<()> {
-        // oh boy we really want this i guess
+    fn index_property(&mut self, name: Identifier) -> indradb::Result<()> {
+        self.meta_data_manager.add_index(&name)?;
         Ok(())
     }
 

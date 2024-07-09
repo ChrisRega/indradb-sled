@@ -13,6 +13,7 @@ extern crate serde_json;
 extern crate sled;
 #[cfg(any(feature = "bench-suite", feature = "test-suite"))]
 extern crate tempfile;
+extern crate thiserror;
 extern crate uuid;
 
 use indradb::Edge;
@@ -69,7 +70,7 @@ mod compression_config {
 fn reverse_edge(edge: &Edge) -> Edge {
     Edge {
         outbound_id: edge.inbound_id,
-        t: edge.t.clone(),
+        t: edge.t,
         inbound_id: edge.outbound_id,
     }
 }
