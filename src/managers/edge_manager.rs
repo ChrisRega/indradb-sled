@@ -1,5 +1,5 @@
 use indradb::{Edge, util};
-use sled::{IVec, Tree};
+use sled::{Batch, IVec, Tree};
 
 use datastore::SledHolder;
 use errors::map_err;
@@ -31,6 +31,22 @@ impl<'db, 'tree> EdgeManager<'db, 'tree> {
 
     pub fn count(&self) -> u64 {
         self.tree.iter().count() as u64
+    }
+
+    pub fn set_batch(
+        &self,
+        edge: &Edge,
+        batch: &mut Batch,
+        range_batch: &mut Batch,
+        range_rev_batch: &mut Batch,
+    ) -> indradb::Result<()> {
+        let key = self.key(edge.clone());
+        batch.insert(key, IVec::default());
+        let edge_range_manager = EdgeRangeManager::new(self.holder);
+        edge_range_manager.set_batch(edge, range_batch)?;
+        let edge_range_manager_rev = EdgeRangeManager::new_reversed(self.holder);
+        edge_range_manager_rev.set_batch(&reverse_edge(edge), range_rev_batch)?;
+        Ok(())
     }
 
     pub fn set(&self, edge: &Edge) -> indradb::Result<()> {

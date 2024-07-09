@@ -28,17 +28,12 @@ impl<'tree> MetaDataManager<'tree> {
 
     pub fn is_indexed(&self, prop: &Identifier) -> indradb::Result<bool> {
         let indexed_properties = self.indexed_properties.read().map_err(DSError::from)?;
-        eprintln!("Asked for indexing: {}", prop.as_str());
-        eprintln!(
-            "Knowing indexes: {:?}",
-            indexed_properties.iter().collect::<Vec<&String>>()
-        );
+
         let is_indexed = indexed_properties.contains(prop.as_str());
         Ok(is_indexed)
     }
 
     pub fn add_index(&self, prop: &Identifier) -> indradb::Result<()> {
-        eprintln!("Adding index: {}", prop.as_str());
         {
             let mut indexed_properties = self.indexed_properties.write().map_err(DSError::from)?;
             if indexed_properties.contains(prop.as_str()) {

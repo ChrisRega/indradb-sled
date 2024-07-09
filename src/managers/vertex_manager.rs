@@ -2,7 +2,7 @@ use std::io::Cursor;
 use std::ops::Deref;
 
 use indradb::{Identifier, util, Vertex};
-use sled::{Iter as DbIterator, Tree};
+use sled::{Batch, Iter as DbIterator, Tree};
 use uuid::Uuid;
 
 use datastore::SledHolder;
@@ -82,6 +82,12 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
                 .insert(&key, util::build(&[util::Component::Identifier(vertex.t)])),
         )?;
         Ok(true)
+    }
+
+    pub fn create_batch(&self, vertex: &Vertex, batch: &mut Batch) -> indradb::Result<()> {
+        let key = self.key(vertex.id);
+        batch.insert(key.clone(), util::build(&[util::Component::Identifier(vertex.t)]));
+        Ok(())
     }
 
     pub fn delete(&self, id: Uuid) -> indradb::Result<()> {

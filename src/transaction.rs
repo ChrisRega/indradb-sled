@@ -1,4 +1,7 @@
-use indradb::{DynIter, Edge, Error, Identifier, Json, Transaction, Vertex};
+use std::ops::Deref;
+
+use indradb::{BulkInsertItem, DynIter, Edge, Error, Identifier, Json, Transaction, Vertex};
+use sled::Batch;
 use uuid::Uuid;
 
 use datastore::SledHolder;
@@ -9,6 +12,28 @@ use managers::edge_range_manager::EdgeRangeManager;
 use managers::metadata::MetaDataManager;
 use managers::vertex_manager::VertexManager;
 use managers::vertex_property_manager::VertexPropertyManager;
+
+#[derive(Default)]
+struct IndraSledBatch {
+    pub(crate) vertex_creation_batch: Batch,
+    pub(crate) edge_creation_batch: Batch,
+    pub(crate) edge_range_creation_batch: Batch,
+    pub(crate) edge_range_rev_creation_batch: Batch,
+}
+
+impl IndraSledBatch {
+    fn apply(self, holder: &SledHolder) -> indradb::Result<()> {
+        map_err(holder.db.deref().apply_batch(self.vertex_creation_batch))?;
+        map_err(holder.edges.apply_batch(self.edge_creation_batch))?;
+        map_err(holder.edge_ranges.apply_batch(self.edge_range_creation_batch))?;
+        map_err(
+            holder
+                .reversed_edge_ranges
+                .apply_batch(self.edge_range_rev_creation_batch),
+        )?;
+        Ok(())
+    }
+}
 
 /// A transaction that is backed by Sled.
 pub struct SledTransaction<'a> {
@@ -230,6 +255,44 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
         for edge in edges {
             self.edge_property_manager.set(&edge, name, value)?;
         }
+        Ok(())
+    }
+
+    fn bulk_insert(&mut self, items: Vec<BulkInsertItem>) -> indradb::Result<()> {
+        let mut batch = IndraSledBatch::default();
+        let mut vertex_props = Vec::new();
+        let mut edge_props = Vec::new();
+
+        for item in items {
+            match item {
+                BulkInsertItem::Vertex(v) => {
+                    self.vertex_manager.create_batch(&v, &mut batch.vertex_creation_batch)?;
+                }
+                BulkInsertItem::Edge(e) => {
+                    self.edge_manager.set_batch(
+                        &e,
+                        &mut batch.edge_creation_batch,
+                        &mut batch.edge_range_creation_batch,
+                        &mut batch.edge_range_rev_creation_batch,
+                    )?;
+                }
+                BulkInsertItem::VertexProperty(id, p, v) => {
+                    vertex_props.push((id, p, v));
+                }
+                BulkInsertItem::EdgeProperty(e, p, v) => {
+                    edge_props.push((e, p, v));
+                }
+            }
+        }
+        batch.apply(self.holder)?;
+        for (id, p, v) in vertex_props {
+            self.vertex_property_manager.set(id, p, &v)?;
+        }
+
+        for (e, p, v) in edge_props {
+            self.edge_property_manager.set(&e, p, &v)?;
+        }
+
         Ok(())
     }
 }
