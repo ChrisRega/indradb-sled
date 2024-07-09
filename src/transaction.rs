@@ -4,14 +4,14 @@ use indradb::{BulkInsertItem, DynIter, Edge, Error, Identifier, Json, Transactio
 use sled::Batch;
 use uuid::Uuid;
 
-use datastore::SledHolder;
-use errors::map_err;
-use managers::edge_manager::EdgeManager;
-use managers::edge_property_manager::EdgePropertyManager;
-use managers::edge_range_manager::EdgeRangeManager;
-use managers::metadata::MetaDataManager;
-use managers::vertex_manager::VertexManager;
-use managers::vertex_property_manager::VertexPropertyManager;
+use crate::datastore::SledHolder;
+use crate::errors::map_err;
+use crate::managers::edge_manager::EdgeManager;
+use crate::managers::edge_property_manager::EdgePropertyManager;
+use crate::managers::edge_range_manager::EdgeRangeManager;
+use crate::managers::metadata::MetaDataManager;
+use crate::managers::vertex_manager::VertexManager;
+use crate::managers::vertex_property_manager::VertexPropertyManager;
 
 #[derive(Default)]
 struct IndraSledBatch {
@@ -292,7 +292,7 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
         for (e, p, v) in edge_props {
             self.edge_property_manager.set(&e, p, &v)?;
         }
-
+        self.sync()?;
         Ok(())
     }
 }

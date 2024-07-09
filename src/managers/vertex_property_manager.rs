@@ -6,7 +6,7 @@ use serde_json::Value as JsonValue;
 use sled::{IVec, Tree};
 use uuid::Uuid;
 
-use errors::map_err;
+use crate::errors::map_err;
 
 pub type OwnedPropertyItem = ((Uuid, Identifier), JsonValue);
 

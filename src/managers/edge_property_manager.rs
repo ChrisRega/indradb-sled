@@ -5,7 +5,7 @@ use indradb::{Edge, Identifier, Json, util};
 use serde_json::{Value as JsonValue, Value};
 use sled::{IVec, Tree};
 
-use errors::map_err;
+use crate::errors::map_err;
 
 pub type EdgePropertyItem = ((Edge, Identifier), JsonValue);
 

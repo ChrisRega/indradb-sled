@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use indradb::{Identifier, util};
 use sled::Tree;
 
-use errors::{DSError, map_err};
+use crate::errors::{DSError, map_err};
 
 const INDEXED_PROPERTIES: &str = "IndexedProperties";
 
@@ -45,6 +45,7 @@ impl<'tree> MetaDataManager<'tree> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn remove_index(&self, prop: &Identifier) -> indradb::Result<()> {
         {
             let mut indexed_properties = self.indexed_properties.write().map_err(DSError::from)?;

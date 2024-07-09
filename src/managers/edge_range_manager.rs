@@ -4,8 +4,8 @@ use indradb::{Edge, util};
 use sled::{Batch, Iter as DbIterator, Tree};
 use uuid::Uuid;
 
-use datastore::SledHolder;
-use errors::map_err;
+use crate::datastore::SledHolder;
+use crate::errors::map_err;
 
 pub struct EdgeRangeManager<'tree> {
     pub tree: &'tree Tree,

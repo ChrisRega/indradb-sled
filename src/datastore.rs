@@ -3,14 +3,13 @@ use std::path::Path;
 use indradb::{Datastore, Result};
 use sled::{Config, Db, Tree};
 
-use managers::edge_manager::EdgeManager;
-use managers::edge_range_manager::EdgeRangeManager;
-use managers::metadata::MetaDataManager;
-use managers::vertex_property_manager::VertexPropertyManager;
-use transaction::SledTransaction;
-
+use crate::managers::edge_manager::EdgeManager;
 use crate::managers::edge_property_manager::EdgePropertyManager;
+use crate::managers::edge_range_manager::EdgeRangeManager;
+use crate::managers::metadata::MetaDataManager;
 use crate::managers::vertex_manager::VertexManager;
+use crate::managers::vertex_property_manager::VertexPropertyManager;
+use crate::transaction::SledTransaction;
 
 use super::errors::map_err;
 

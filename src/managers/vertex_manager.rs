@@ -5,11 +5,10 @@ use indradb::{Identifier, util, Vertex};
 use sled::{Batch, Iter as DbIterator, Tree};
 use uuid::Uuid;
 
-use datastore::SledHolder;
-use errors::map_err;
-use managers::edge_range_manager::EdgeRangeManager;
-
+use crate::datastore::SledHolder;
+use crate::errors::map_err;
 use crate::managers::edge_manager::EdgeManager;
+use crate::managers::edge_range_manager::EdgeRangeManager;
 use crate::managers::vertex_property_manager::VertexPropertyManager;
 
 pub type VertexItem = (Uuid, Identifier);

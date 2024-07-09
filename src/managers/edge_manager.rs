@@ -1,12 +1,11 @@
 use indradb::{Edge, util};
 use sled::{Batch, IVec, Tree};
 
-use datastore::SledHolder;
-use errors::map_err;
-use reverse_edge;
-
+use crate::datastore::SledHolder;
+use crate::errors::map_err;
 use crate::managers::edge_property_manager::EdgePropertyManager;
 use crate::managers::edge_range_manager::EdgeRangeManager;
+use crate::reverse_edge;
 
 pub struct EdgeManager<'db: 'tree, 'tree> {
     pub holder: &'db SledHolder,
