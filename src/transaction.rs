@@ -84,7 +84,6 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
             return Ok(None);
         }
         let iter = self.vertex_property_manager.iterate_for_property_name(name)?;
-        let iter = iter.map(|r| r.map(|(id, _)| id.0));
         Ok(Some(Box::new(iter)))
     }
 
@@ -99,7 +98,6 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
         let iter = self
             .vertex_property_manager
             .iterate_for_property_name_and_value(name, value)?;
-        let iter = iter.map(|r| r.map(|(id, _)| id.0));
         Ok(Some(Box::new(iter)))
     }
 
@@ -239,25 +237,6 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
         }
     }
 
-    fn index_property(&mut self, name: Identifier) -> indradb::Result<()> {
-        self.meta_data_manager.add_index(&name)?;
-        Ok(())
-    }
-
-    fn set_vertex_properties(&mut self, vertices: Vec<Uuid>, name: Identifier, value: &Json) -> indradb::Result<()> {
-        for v in vertices {
-            self.vertex_property_manager.set(v, name, value)?;
-        }
-        Ok(())
-    }
-
-    fn set_edge_properties(&mut self, edges: Vec<Edge>, name: Identifier, value: &Json) -> indradb::Result<()> {
-        for edge in edges {
-            self.edge_property_manager.set(&edge, name, value)?;
-        }
-        Ok(())
-    }
-
     fn bulk_insert(&mut self, items: Vec<BulkInsertItem>) -> indradb::Result<()> {
         let mut batch = IndraSledBatch::default();
         let mut vertex_props = Vec::new();
@@ -293,6 +272,25 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
             self.edge_property_manager.set(&e, p, &v)?;
         }
         self.sync()?;
+        Ok(())
+    }
+
+    fn index_property(&mut self, name: Identifier) -> indradb::Result<()> {
+        self.meta_data_manager.add_index(&name)?;
+        Ok(())
+    }
+
+    fn set_vertex_properties(&mut self, vertices: Vec<Uuid>, name: Identifier, value: &Json) -> indradb::Result<()> {
+        for v in vertices {
+            self.vertex_property_manager.set(v, name, value)?;
+        }
+        Ok(())
+    }
+
+    fn set_edge_properties(&mut self, edges: Vec<Edge>, name: Identifier, value: &Json) -> indradb::Result<()> {
+        for edge in edges {
+            self.edge_property_manager.set(&edge, name, value)?;
+        }
         Ok(())
     }
 }
