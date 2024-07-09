@@ -8,6 +8,7 @@ use managers::edge_property_manager::EdgePropertyManager;
 use managers::edge_range_manager::EdgeRangeManager;
 use managers::vertex_manager::VertexManager;
 use managers::vertex_property_manager::VertexPropertyManager;
+use reverse_edge;
 
 /// A transaction that is backed by Sled.
 pub struct SledTransaction<'a> {

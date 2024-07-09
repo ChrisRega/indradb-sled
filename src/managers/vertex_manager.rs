@@ -105,14 +105,6 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
             }
         }
 
-        {
-            let reversed_edge_range_manager = EdgeRangeManager::new_reversed(self.holder);
-            for item in reversed_edge_range_manager.iterate_for_owner(id) {
-                let edge = item?;
-                debug_assert_eq!(edge.inbound_id, id);
-                edge_manager.delete(&edge)?;
-            }
-        }
         Ok(())
     }
 }

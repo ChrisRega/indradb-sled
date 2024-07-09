@@ -15,6 +15,8 @@ extern crate sled;
 extern crate tempfile;
 extern crate uuid;
 
+use indradb::Edge;
+
 pub use self::datastore::{SledConfig, SledDatastore};
 
 mod datastore;
@@ -62,4 +64,12 @@ mod compression_config {
         let path = tempdir().unwrap().into_path();
         Database::new(SledConfig::with_compression(None).open(path).unwrap())
     });
+}
+
+fn reverse_edge(edge: &Edge) -> Edge {
+    Edge {
+        outbound_id: edge.inbound_id,
+        t: edge.t.clone(),
+        inbound_id: edge.outbound_id,
+    }
 }
