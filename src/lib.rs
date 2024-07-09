@@ -15,18 +15,19 @@ extern crate sled;
 extern crate tempfile;
 extern crate uuid;
 
-pub use self::datastore::{SledConfig, SledDatastore, SledTransaction};
+pub use self::datastore::{SledConfig, SledDatastore};
 
 mod datastore;
 mod errors;
 mod managers;
+mod transaction;
 
 mod normal_config {
-    use indradb::Database;
 
     #[cfg(feature = "bench-suite")]
     full_bench_impl!({
         use super::SledDatastore;
+        use indradb::Database;
         use tempfile::tempdir;
         let path = tempdir().unwrap().into_path();
         Database::new(SledDatastore::new(path).unwrap())
@@ -35,6 +36,7 @@ mod normal_config {
     #[cfg(feature = "test-suite")]
     full_test_impl!({
         use super::SledDatastore;
+        use indradb::Database;
         use tempfile::tempdir;
         let path = tempdir().unwrap().into_path();
         Database::new(SledDatastore::new(path).unwrap())
@@ -42,11 +44,11 @@ mod normal_config {
 }
 
 mod compression_config {
-    use indradb::Database;
 
     #[cfg(feature = "bench-suite")]
     full_bench_impl!({
         use super::SledConfig;
+        use indradb::Database;
         use tempfile::tempdir;
         let path = tempdir().unwrap().into_path();
         Database::new(SledConfig::with_compression(None).open(path).unwrap())
@@ -55,6 +57,7 @@ mod compression_config {
     #[cfg(feature = "test-suite")]
     full_test_impl!({
         use super::SledConfig;
+        use indradb::Database;
         use tempfile::tempdir;
         let path = tempdir().unwrap().into_path();
         Database::new(SledConfig::with_compression(None).open(path).unwrap())
