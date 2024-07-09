@@ -1,7 +1,13 @@
 //! The Sled datastore implementation.
 
+#![cfg_attr(feature = "bench-suite", feature(test))]
+
 extern crate chrono;
 extern crate ecow;
+#[cfg(any(feature = "bench-suite", feature = "test-suite"))]
+#[macro_use]
+extern crate indradb;
+#[cfg(not(any(feature = "bench-suite", feature = "test-suite")))]
 extern crate indradb;
 extern crate serde_json;
 extern crate sled;
@@ -16,36 +22,43 @@ mod errors;
 mod managers;
 mod transaction;
 
-#[cfg(feature = "bench-suite")]
-mod bench {
-    use indradb::full_bench_impl;
+mod normal_config {
 
-    use super::*;
-
+    #[cfg(feature = "bench-suite")]
     full_bench_impl!({
+        use super::SledDatastore;
+        use indradb::Database;
+        use tempfile::tempdir;
         let path = tempdir().unwrap().into_path();
         Database::new(SledDatastore::new(path).unwrap())
     });
-    full_bench_impl!({
+
+    #[cfg(feature = "test-suite")]
+    full_test_impl!({
+        use super::SledDatastore;
+        use indradb::Database;
+        use tempfile::tempdir;
         let path = tempdir().unwrap().into_path();
-        Database::new(SledConfig::with_compression(None).open(path).unwrap())
+        Database::new(SledDatastore::new(path).unwrap())
     });
 }
 
-#[cfg(test)]
-#[cfg(feature = "test-suite")]
-mod test {
-    use indradb::full_test_impl;
-    use tempfile::tempdir;
+mod compression_config {
 
-    use super::*;
-
-    full_test_impl!({
+    #[cfg(feature = "bench-suite")]
+    full_bench_impl!({
+        use super::SledConfig;
+        use indradb::Database;
+        use tempfile::tempdir;
         let path = tempdir().unwrap().into_path();
-        Database::new(SledDatastore::new(path).unwrap())
+        Database::new(SledConfig::with_compression(None).open(path).unwrap())
     });
 
+    #[cfg(feature = "test-suite")]
     full_test_impl!({
+        use super::SledConfig;
+        use indradb::Database;
+        use tempfile::tempdir;
         let path = tempdir().unwrap().into_path();
         Database::new(SledConfig::with_compression(None).open(path).unwrap())
     });
