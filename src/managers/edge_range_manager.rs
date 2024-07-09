@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use indradb::{Edge, util};
+use indradb::{util, Edge};
 use sled::{Batch, Iter as DbIterator, Tree};
 use uuid::Uuid;
 

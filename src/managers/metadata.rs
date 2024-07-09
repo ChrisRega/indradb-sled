@@ -2,10 +2,10 @@ use std::collections::HashSet;
 use std::io::Cursor;
 use std::sync::{Arc, RwLock};
 
-use indradb::{Identifier, util};
+use indradb::{util, Identifier};
 use sled::Tree;
 
-use crate::errors::{DSError, map_err};
+use crate::errors::{map_err, DSError};
 
 const INDEXED_PROPERTIES: &str = "IndexedProperties";
 

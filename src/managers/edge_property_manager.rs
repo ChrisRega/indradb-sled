@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use ecow::EcoVec;
-use indradb::{Edge, Identifier, Json, util};
+use indradb::{util, Edge, Identifier, Json};
 use serde_json::Value as JsonValue;
 use sled::{IVec, Tree};
 
