@@ -137,9 +137,7 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
     }
 
     fn edge_property(&self, edge: &Edge, name: Identifier) -> indradb::Result<Option<Json>> {
-        let result = self
-            .edge_property_manager
-            .get(edge.outbound_id, edge.t, edge.inbound_id, name)?;
+        let result = self.edge_property_manager.get(edge, name)?;
         Ok(result.map(Json::new))
     }
 
@@ -175,8 +173,7 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
 
     fn delete_edge_properties(&mut self, props: Vec<(Edge, Identifier)>) -> indradb::Result<()> {
         for (edge, prop) in props {
-            self.edge_property_manager
-                .delete(edge.outbound_id, edge.t, edge.inbound_id, prop)?;
+            self.edge_property_manager.delete(&edge, prop)?;
         }
         Ok(())
     }
@@ -211,8 +208,7 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
 
     fn set_edge_properties(&mut self, edges: Vec<Edge>, name: Identifier, value: &Json) -> indradb::Result<()> {
         for edge in edges {
-            self.edge_property_manager
-                .set(edge.outbound_id, edge.t, edge.inbound_id, name, value)?;
+            self.edge_property_manager.set(&edge, name, value)?;
         }
         Ok(())
     }

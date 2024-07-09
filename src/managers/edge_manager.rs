@@ -57,7 +57,7 @@ impl<'db, 'tree> EdgeManager<'db, 'tree> {
 
         for item in edge_property_manager.iterate_for_owner(edge)? {
             let ((edge, id), _) = item?;
-            edge_property_manager.delete(edge.outbound_id, edge.t, edge.inbound_id, id)?;
+            edge_property_manager.delete(&edge, id)?;
         }
         Ok(())
     }
