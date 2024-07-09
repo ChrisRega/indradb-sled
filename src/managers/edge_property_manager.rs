@@ -156,10 +156,7 @@ impl<'tree> EdgePropertyManager<'tree> {
         let value_json = serde_json::to_vec(value)?;
         map_err(self.tree.insert(key.as_slice(), value_json.as_slice()))?;
         let value_key = Self::key_value_index(edge, value, name);
-        eprintln!(
-            "Inserting edge property {:?}, into edge {edge:?}, value_key: {value_key:?}",
-            name
-        );
+
         map_err(
             self.value_index_tree
                 .insert(value_key.as_slice(), value_json.as_slice()),

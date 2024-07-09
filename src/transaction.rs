@@ -2,6 +2,7 @@ use indradb::{DynIter, Edge, Error, Identifier, Json, Transaction, Vertex};
 use uuid::Uuid;
 
 use datastore::SledHolder;
+use errors::map_err;
 use managers::edge_manager::EdgeManager;
 use managers::edge_property_manager::EdgePropertyManager;
 use managers::edge_range_manager::EdgeRangeManager;
@@ -24,7 +25,6 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
         let vertex_manager = VertexManager::new(self.holder);
         vertex_manager.count()
     }
-
     fn all_vertices(&'a self) -> indradb::Result<DynIter<'a, Vertex>> {
         let iterator = self.vertex_manager.iterate_for_range(Uuid::default());
         let mapped = iterator.map(move |item| {
@@ -175,6 +175,11 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
         for (edge, prop) in props {
             self.edge_property_manager.delete(&edge, prop)?;
         }
+        Ok(())
+    }
+
+    fn sync(&self) -> indradb::Result<()> {
+        let _ = map_err(self.holder.db.flush())?;
         Ok(())
     }
 
