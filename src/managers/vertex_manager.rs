@@ -2,14 +2,13 @@ use std::io::Cursor;
 use std::ops::Deref;
 
 use indradb::{Identifier, util, Vertex};
-use sled::{Iter as DbIterator, Tree};
+use sled::{Batch, Iter as DbIterator, Tree};
 use uuid::Uuid;
 
-use datastore::SledHolder;
-use errors::map_err;
-use managers::edge_range_manager::EdgeRangeManager;
-
+use crate::datastore::SledHolder;
+use crate::errors::map_err;
 use crate::managers::edge_manager::EdgeManager;
+use crate::managers::edge_range_manager::EdgeRangeManager;
 use crate::managers::vertex_property_manager::VertexPropertyManager;
 
 pub type VertexItem = (Uuid, Identifier);
@@ -84,6 +83,12 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
         Ok(true)
     }
 
+    pub fn create_batch(&self, vertex: &Vertex, batch: &mut Batch) -> indradb::Result<()> {
+        let key = self.key(vertex.id);
+        batch.insert(key.clone(), util::build(&[util::Component::Identifier(vertex.t)]));
+        Ok(())
+    }
+
     pub fn delete(&self, id: Uuid) -> indradb::Result<()> {
         map_err(self.tree.remove(self.key(id)))?;
 
@@ -105,14 +110,6 @@ impl<'db: 'tree, 'tree> VertexManager<'db, 'tree> {
             }
         }
 
-        {
-            let reversed_edge_range_manager = EdgeRangeManager::new_reversed(self.holder);
-            for item in reversed_edge_range_manager.iterate_for_owner(id) {
-                let edge = item?;
-                debug_assert_eq!(edge.inbound_id, id);
-                edge_manager.delete(&edge)?;
-            }
-        }
         Ok(())
     }
 }

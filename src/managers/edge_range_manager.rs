@@ -1,11 +1,11 @@
 use std::io::Cursor;
 
 use indradb::{Edge, util};
-use sled::{Iter as DbIterator, Tree};
+use sled::{Batch, Iter as DbIterator, Tree};
 use uuid::Uuid;
 
-use datastore::SledHolder;
-use errors::map_err;
+use crate::datastore::SledHolder;
+use crate::errors::map_err;
 
 pub struct EdgeRangeManager<'tree> {
     pub tree: &'tree Tree,
@@ -76,6 +76,12 @@ impl<'tree> EdgeRangeManager<'tree> {
     pub fn set(&self, edge: &Edge) -> indradb::Result<()> {
         let key = self.key(edge);
         map_err(self.tree.insert(key, &[]))?;
+        Ok(())
+    }
+
+    pub fn set_batch(&self, edge: &Edge, batch: &mut Batch) -> indradb::Result<()> {
+        let key = self.key(edge);
+        batch.insert(key, &[]);
         Ok(())
     }
 

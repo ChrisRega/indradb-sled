@@ -6,7 +6,7 @@ use serde_json::Value as JsonValue;
 use sled::{IVec, Tree};
 use uuid::Uuid;
 
-use errors::map_err;
+use crate::errors::map_err;
 
 pub type OwnedPropertyItem = ((Uuid, Identifier), JsonValue);
 
@@ -104,6 +104,13 @@ impl<'tree> VertexPropertyManager<'tree> {
     pub fn set(&self, vertex_id: Uuid, name: Identifier, value: &JsonValue) -> indradb::Result<()> {
         let key = self.key(vertex_id, name);
         let value_json = serde_json::to_vec(value)?;
+
+        if let Some(old) = map_err(self.tree.get(key.clone()))? {
+            let old_value = serde_json::from_slice(&old)?;
+            let value_index_key = Self::key_value_index(&vertex_id, &old_value, name);
+            map_err(self.value_index_tree.remove(value_index_key))?;
+        }
+
         map_err(self.tree.insert(key.as_slice(), value_json.as_slice()))?;
         let value_index_key = Self::key_value_index(&vertex_id, value, name);
         map_err(self.value_index_tree.insert(value_index_key, value_json.as_slice()))?;
