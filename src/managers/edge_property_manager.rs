@@ -28,6 +28,20 @@ impl<'tree> EdgePropertyManager<'tree> {
         ])
     }
 
+    fn read_key(buf: IVec) -> (Edge, Identifier) {
+        let mut cursor = Cursor::new(buf.as_ref());
+        let edge_property_outbound_id = util::read_uuid(&mut cursor);
+        let edge_property_t = util::read_identifier(&mut cursor);
+        let edge_property_inbound_id = util::read_uuid(&mut cursor);
+        let edge_property_name = util::read_identifier(&mut cursor);
+        let edge = Edge {
+            outbound_id: edge_property_outbound_id,
+            t: edge_property_t,
+            inbound_id: edge_property_inbound_id,
+        };
+        (edge, edge_property_name)
+    }
+
     pub fn iterate_for_property_name(
         &self,
         name: Identifier,
@@ -84,31 +98,11 @@ impl<'tree> EdgePropertyManager<'tree> {
         ]);
 
         let iterator = self.tree.scan_prefix(prefix);
-
         let mapped = iterator.map(move |item| -> indradb::Result<EdgePropertyItem> {
             let (k, v) = map_err(item)?;
-            let mut cursor = Cursor::new(k);
-
-            let edge_property_outbound_id = util::read_uuid(&mut cursor);
-
-            let edge_property_t = util::read_identifier(&mut cursor);
-
-            let edge_property_inbound_id = util::read_uuid(&mut cursor);
-
-            let edge_property_name = util::read_identifier(&mut cursor);
-
+            let (edge, p_name) = Self::read_key(k);
             let value = serde_json::from_slice(&v)?;
-            Ok((
-                (
-                    Edge {
-                        outbound_id: edge_property_outbound_id,
-                        t: edge_property_t,
-                        inbound_id: edge_property_inbound_id,
-                    },
-                    edge_property_name,
-                ),
-                value,
-            ))
+            Ok(((edge, p_name), value))
         });
 
         Ok(Box::new(mapped))
