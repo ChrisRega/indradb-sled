@@ -40,38 +40,35 @@ impl<'tree> VertexPropertyManager<'tree> {
         (name, value, uuid)
     }
 
+    fn value_iterate_uuids(&self, iterator: sled::Iter) -> impl Iterator<Item = indradb::Result<Uuid>> + '_ {
+        iterator.map(move |item| -> indradb::Result<Uuid> {
+            let (k, _) = map_err(item)?;
+            let (_, _, vid) = Self::read_key_value_index(k);
+            Ok(vid)
+        })
+    }
+
     pub fn iterate_for_property_name(
         &self,
         name: Identifier,
-    ) -> indradb::Result<impl Iterator<Item = indradb::Result<OwnedPropertyItem>> + '_> {
+    ) -> indradb::Result<impl Iterator<Item = indradb::Result<Uuid>> + '_> {
         let prefix = util::build(&[util::Component::Identifier(name)]);
         let iterator = self.value_index_tree.scan_prefix(prefix);
-
-        Ok(iterator.map(move |item| -> indradb::Result<OwnedPropertyItem> {
-            let (k, v) = map_err(item)?;
-            let (n, _, vid) = Self::read_key_value_index(k);
-            let value = serde_json::from_slice(&v)?;
-            Ok(((vid, n), value))
-        }))
+        Ok(self.value_iterate_uuids(iterator))
     }
 
     pub fn iterate_for_property_name_and_value(
         &self,
         name: Identifier,
         value: &JsonValue,
-    ) -> indradb::Result<impl Iterator<Item = indradb::Result<OwnedPropertyItem>> + '_> {
+    ) -> indradb::Result<impl Iterator<Item = indradb::Result<Uuid>> + '_> {
         let prefix = util::build(&[
             util::Component::Identifier(name),
             util::Component::Json(&Json::new(value.clone())),
         ]);
         let iterator = self.value_index_tree.scan_prefix(prefix);
 
-        Ok(iterator.map(move |item| -> indradb::Result<OwnedPropertyItem> {
-            let (k, v) = map_err(item)?;
-            let (n, _, vid) = Self::read_key_value_index(k);
-            let value = serde_json::from_slice(&v)?;
-            Ok(((vid, n), value))
-        }))
+        Ok(self.value_iterate_uuids(iterator))
     }
 
     pub fn iterate_for_owner(

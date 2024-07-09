@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use ecow::EcoVec;
 use indradb::{Edge, Identifier, Json, util};
-use serde_json::{Value as JsonValue, Value};
+use serde_json::Value as JsonValue;
 use sled::{IVec, Tree};
 
 use crate::errors::map_err;
@@ -62,29 +62,17 @@ impl<'tree> EdgePropertyManager<'tree> {
         value: &JsonValue,
     ) -> indradb::Result<impl Iterator<Item = indradb::Result<Edge>> + 'tree> {
         let value = value.clone();
-        let prefix = util::build(&[util::Component::Identifier(name)]);
+        let prefix = util::build(&[
+            util::Component::Identifier(name),
+            util::Component::Json(&Json::new(value)),
+        ]);
         let iterator = self.value_index_tree.scan_prefix(prefix);
 
-        Ok(iterator
-            .map(move |item| -> indradb::Result<(Edge, Value)> {
-                let (k, v) = map_err(item)?;
-
-                let (_p, _, edge) = Self::read_key_value_index(k);
-                let val = serde_json::from_slice(&v)?;
-                Ok((edge, val))
-            })
-            .filter_map(move |item| {
-                item.map_or_else(
-                    |e| Some(Err(e)),
-                    |(edge, val)| {
-                        if val == value {
-                            Some(Ok(edge))
-                        } else {
-                            None
-                        }
-                    },
-                )
-            }))
+        Ok(iterator.map(move |item| -> indradb::Result<Edge> {
+            let (k, _) = map_err(item)?;
+            let (_p, _, edge) = Self::read_key_value_index(k);
+            Ok(edge)
+        }))
     }
 
     pub fn iterate_for_owner<'a>(
