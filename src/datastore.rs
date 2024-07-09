@@ -96,7 +96,7 @@ impl SledDatastore {
     ///
     /// # Arguments
     /// * `path`: The file path to the Sled database.
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<SledDatastore> {
+    pub fn new_db(path: impl AsRef<Path>) -> Result<SledDatastore> {
         Ok(SledDatastore {
             holder: SledHolder::new(path, SledConfig::default())?,
         })
