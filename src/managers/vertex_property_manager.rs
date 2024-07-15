@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::io::Cursor;
 
-use ecow::EcoVec;
 use indradb::{Identifier, Json, util};
 use serde_json::Value as JsonValue;
 use sled::{IVec, Tree};
@@ -98,6 +98,29 @@ impl<'tree> VertexPropertyManager<'tree> {
         }
     }
 
+    pub fn set_batch(
+        &self,
+        vertex_id: Uuid,
+        batch: &mut sled::Batch,
+        batch_value: &mut sled::Batch,
+        property_creation_set: &mut HashMap<(Uuid, Identifier), Vec<u8>>,
+        name: Identifier,
+        value: &JsonValue,
+    ) -> indradb::Result<()> {
+        let key = self.key(vertex_id, name);
+        let value_json = serde_json::to_vec(value)?;
+        batch.insert(key.clone(), value_json);
+        let old_value = map_err(self.tree.get(key.clone()))?;
+        if let Some(old_value) = old_value {
+            let old_value: Json = serde_json::from_slice(&old_value)?;
+            let value_key = Self::key_value_index(&vertex_id, &old_value, name);
+            batch_value.remove(value_key.as_slice());
+        }
+        let value_key = Self::key_value_index(&vertex_id, value, name);
+        property_creation_set.insert((vertex_id, name), value_key);
+        Ok(())
+    }
+
     pub fn set(&self, vertex_id: Uuid, name: Identifier, value: &JsonValue) -> indradb::Result<()> {
         let key = self.key(vertex_id, name);
         let value_json = serde_json::to_vec(value)?;
@@ -115,19 +138,14 @@ impl<'tree> VertexPropertyManager<'tree> {
     }
 
     pub fn delete(&self, vertex_id: Uuid, name: Identifier) -> indradb::Result<()> {
+        let old_value = map_err(self.tree.get(self.key(vertex_id, name)))?;
         map_err(self.tree.remove(self.key(vertex_id, name)))?;
-        let prefix = util::build(&[util::Component::Identifier(name)]);
-        let items = self.value_index_tree.scan_prefix(prefix);
-        let mut keys_to_remove = EcoVec::new();
-        for (key, _) in items.flatten() {
-            let (_n, _v, vid) = Self::read_key_value_index(key.clone());
-            if vertex_id == vid {
-                keys_to_remove.push(key);
-            }
+        if let Some(old_value) = old_value {
+            let old_value = serde_json::from_slice(&old_value)?;
+            let value_index_key = Self::key_value_index(&vertex_id, &old_value, name);
+            map_err(self.value_index_tree.remove(value_index_key))?;
         }
-        for key in keys_to_remove {
-            map_err(self.value_index_tree.remove(key))?;
-        }
+
         Ok(())
     }
 }

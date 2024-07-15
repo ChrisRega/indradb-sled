@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::io::Cursor;
 
-use ecow::EcoVec;
 use indradb::{Edge, Identifier, Json, util};
 use serde_json::Value as JsonValue;
 use sled::{IVec, Tree};
@@ -133,6 +133,29 @@ impl<'tree> EdgePropertyManager<'tree> {
         )
     }
 
+    pub fn set_batch(
+        &self,
+        edge: &Edge,
+        batch: &mut sled::Batch,
+        batch_value: &mut sled::Batch,
+        property_creation_set: &mut HashMap<(Edge, Identifier), Vec<u8>>,
+        name: Identifier,
+        value: &JsonValue,
+    ) -> indradb::Result<()> {
+        let key = self.key(edge, name);
+        let value_json = serde_json::to_vec(value)?;
+        batch.insert(key.clone(), value_json);
+        let old_value = map_err(self.tree.get(key.clone()))?;
+        if let Some(old_value) = old_value {
+            let old_value: Json = serde_json::from_slice(&old_value)?;
+            let value_key = Self::key_value_index(edge, &old_value, name);
+            batch_value.remove(value_key.as_slice());
+        }
+        let value_key = Self::key_value_index(edge, value, name);
+        property_creation_set.insert((edge.clone(), name), value_key);
+        Ok(())
+    }
+
     pub fn set(&self, edge: &Edge, name: Identifier, value: &JsonValue) -> indradb::Result<()> {
         let key = self.key(edge, name);
         let value_json = serde_json::to_vec(value)?;
@@ -155,19 +178,14 @@ impl<'tree> EdgePropertyManager<'tree> {
     }
 
     pub fn delete(&self, edge: &Edge, name: Identifier) -> indradb::Result<()> {
+        let old_value = map_err(self.tree.get(self.key(edge, name)))?;
         map_err(self.tree.remove(self.key(edge, name)))?;
-        let prefix = util::build(&[util::Component::Identifier(name)]);
-        let mut edges_to_delete = EcoVec::new();
-        for current_edge in self.value_index_tree.scan_prefix(prefix) {
-            let (k, _) = map_err(current_edge)?;
-            let (_n, _, vid) = Self::read_key_value_index(k.clone());
-            if vid == *edge {
-                edges_to_delete.push(k);
-            }
+        if let Some(old_value) = old_value {
+            let old_value: Json = serde_json::from_slice(&old_value)?;
+            let value_key = Self::key_value_index(edge, &old_value, name);
+            map_err(self.value_index_tree.remove(value_key.as_slice()))?;
         }
-        for edge in edges_to_delete {
-            map_err(self.value_index_tree.remove(&edge))?;
-        }
+
         Ok(())
     }
 }

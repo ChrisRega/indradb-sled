@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::ops::Deref;
 
 use indradb::{BulkInsertItem, DynIter, Edge, Error, Identifier, Json, Transaction, Vertex};
-use sled::Batch;
+use sled::{Batch, IVec};
 use uuid::Uuid;
 
 use crate::datastore::SledHolder;
@@ -19,10 +20,16 @@ struct IndraSledBatch {
     pub(crate) edge_creation_batch: Batch,
     pub(crate) edge_range_creation_batch: Batch,
     pub(crate) edge_range_rev_creation_batch: Batch,
+    pub(crate) vertex_property_creation_batch: Batch,
+    pub(crate) vertex_property_value_creation_batch: Batch,
+    pub(crate) vertex_property_creation_set: HashMap<(Uuid, Identifier), Vec<u8>>,
+    pub(crate) edge_property_creation_batch: Batch,
+    pub(crate) edge_property_value_creation_batch: Batch,
+    pub(crate) edge_property_creation_set: HashMap<(Edge, Identifier), Vec<u8>>,
 }
 
 impl IndraSledBatch {
-    fn apply(self, holder: &SledHolder) -> indradb::Result<()> {
+    fn apply(mut self, holder: &SledHolder) -> indradb::Result<()> {
         map_err(holder.db.deref().apply_batch(self.vertex_creation_batch))?;
         map_err(holder.edges.apply_batch(self.edge_creation_batch))?;
         map_err(holder.edge_ranges.apply_batch(self.edge_range_creation_batch))?;
@@ -30,6 +37,29 @@ impl IndraSledBatch {
             holder
                 .reversed_edge_ranges
                 .apply_batch(self.edge_range_rev_creation_batch),
+        )?;
+        map_err(holder.edge_properties.apply_batch(self.edge_property_creation_batch))?;
+        map_err(
+            holder
+                .vertex_properties
+                .apply_batch(self.vertex_property_creation_batch),
+        )?;
+
+        for (_, key) in self.edge_property_creation_set {
+            self.edge_property_value_creation_batch.insert(key, IVec::default());
+        }
+        for (_, key) in self.vertex_property_creation_set {
+            self.vertex_property_value_creation_batch.insert(key, IVec::default());
+        }
+        map_err(
+            holder
+                .vertex_property_values
+                .apply_batch(self.vertex_property_value_creation_batch),
+        )?;
+        map_err(
+            holder
+                .edge_property_values
+                .apply_batch(self.edge_property_value_creation_batch),
         )?;
         Ok(())
     }
@@ -239,8 +269,6 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
 
     fn bulk_insert(&mut self, items: Vec<BulkInsertItem>) -> indradb::Result<()> {
         let mut batch = IndraSledBatch::default();
-        let mut vertex_props = Vec::new();
-        let mut edge_props = Vec::new();
 
         for item in items {
             match item {
@@ -256,21 +284,29 @@ impl<'a> Transaction<'a> for SledTransaction<'a> {
                     )?;
                 }
                 BulkInsertItem::VertexProperty(id, p, v) => {
-                    vertex_props.push((id, p, v));
+                    self.vertex_property_manager.set_batch(
+                        id,
+                        &mut batch.vertex_property_creation_batch,
+                        &mut batch.vertex_property_value_creation_batch,
+                        &mut batch.vertex_property_creation_set,
+                        p,
+                        &v,
+                    )?;
                 }
                 BulkInsertItem::EdgeProperty(e, p, v) => {
-                    edge_props.push((e, p, v));
+                    self.edge_property_manager.set_batch(
+                        &e,
+                        &mut batch.edge_property_creation_batch,
+                        &mut batch.edge_property_value_creation_batch,
+                        &mut batch.edge_property_creation_set,
+                        p,
+                        &v,
+                    )?;
                 }
             }
         }
         batch.apply(self.holder)?;
-        for (id, p, v) in vertex_props {
-            self.vertex_property_manager.set(id, p, &v)?;
-        }
 
-        for (e, p, v) in edge_props {
-            self.edge_property_manager.set(&e, p, &v)?;
-        }
         self.sync()?;
         Ok(())
     }
