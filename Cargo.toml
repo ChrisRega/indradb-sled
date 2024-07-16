@@ -1,6 +1,6 @@
 [package]
 name = "indradb-sled"
-version = "0.1.0"
+version = "4.0.0-RC1"
 authors = ["Yusuf Simonson <simonson@gmail.com>"]
 description = "A sled-backed datastore for IndraDB"
 homepage = "https://indradb.github.io"

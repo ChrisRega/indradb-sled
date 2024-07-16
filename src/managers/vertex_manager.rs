@@ -1,7 +1,7 @@
 use std::io::Cursor;
 use std::ops::Deref;
 
-use indradb::{Identifier, util, Vertex};
+use indradb::{util, Identifier, Vertex};
 use sled::{Batch, Iter as DbIterator, Tree};
 use uuid::Uuid;
 

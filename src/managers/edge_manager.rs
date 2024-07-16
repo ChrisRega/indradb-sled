@@ -1,4 +1,4 @@
-use indradb::{Edge, util};
+use indradb::{util, Edge};
 use sled::{Batch, IVec, Tree};
 
 use crate::datastore::SledHolder;
